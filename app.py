@@ -1,5 +1,4 @@
-
-    import streamlit as st
+import streamlit as st
 import fitz  # PyMuPDF
 from docx import Document
 from pptx import Presentation
