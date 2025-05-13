@@ -145,20 +145,15 @@ def search_image(question, embeddings, image_paths):
     top_idx = np.argmax(scores)
     return image_paths[top_idx]
 
-
 def ask_gemini(question, img_path):
-    prompt = [f"""Answer the question based on the following image.
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"""Answer the question based on the following image.
 Don't use markdown.
 Please provide enough context for your answer.
 
-Question: {question}""", Image.open(img_path)]
-    
-    # Directly use the client to generate content
-    response = client.generate_content(
-        model="gemini-2.5-flash-preview-04-17",
-        contents=prompt
-    )
-    
+Question: {question}"""
+    img = Image.open(img_path)
+    response = model.generate_content([prompt, img])
     return response.text
 
 
