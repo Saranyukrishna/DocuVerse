@@ -201,6 +201,10 @@ if 'processed' not in st.session_state:
     st.session_state.text = ""
     st.session_state.image_paths = []
     st.session_state.selected_img = None
+if 'selected_img_index' not in st.session_state:
+    st.session_state.selected_img_index = None
+if 'selected_img' not in st.session_state:
+    st.session_state.selected_img = None
 
 # File upload section
 with st.expander("Upload Document", expanded=True):
@@ -286,41 +290,39 @@ with tab1:
     render_chat(text_chat_container, st.session_state.text_chat_history)
 
 # Image Analysis Tab
-# Image Analysis Tab
 with tab2:
     st.subheader("Image Analysis")
 
     image_chat_container = st.container()
 
-    # Input box for image-related questions
+    # Chat input box always visible
     user_image_input = st.text_input(
-        "Ask about the selected image:",
+        "Ask about the image:",
         key="image_input",
-        placeholder="Type your question here...",
-        label_visibility="visible"
+        placeholder="Type your question here..."
     )
     image_send_button = st.button("Send", key="image_send")
 
-    if image_send_button:
-        if st.session_state.selected_img is not None and user_image_input:
-            st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
-            with st.spinner("Analyzing image..."):
-                answer = ask_gemini(
-                    user_image_input,
-                    img_path=st.session_state.selected_img,
-                    context=st.session_state.text
-                )
-                st.session_state.image_chat_history.append(AIMessage(content=answer))
-                st.session_state.scroll = True
-                st.experimental_rerun()
-        else:
-            st.warning("Please select an image before asking a question.")
+    if image_send_button and user_image_input:
+        st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
+        if user_image_input.lower() == 'close the chat':
+            st.stop()
+
+        with st.spinner("Analyzing image..."):
+            answer = ask_gemini(
+                user_image_input,
+                img_path=st.session_state.selected_img,
+                context=st.session_state.text
+            )
+            st.session_state.image_chat_history.append(AIMessage(content=answer))
+            st.session_state.scroll = True
+            st.rerun()
 
     render_chat(image_chat_container, st.session_state.image_chat_history)
 
+    # Image grid
     if st.session_state.processed and st.session_state.image_paths:
         st.write("Select an image to analyze:")
-
         num_cols = 3
         image_paths = st.session_state.image_paths
         rows = (len(image_paths) + num_cols - 1) // num_cols
@@ -337,20 +339,23 @@ with tab2:
                             img.thumbnail((200, 200))
                             st.image(img, use_container_width=True)
                             if st.button(f"Select Image {img_idx+1}", key=f"img_btn_{img_idx}"):
-                                set_image_selection(img_idx)
+                                st.session_state.selected_img_index = img_idx
+                                st.session_state.selected_img = st.session_state.image_paths[img_idx]
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
 
+        # Show selected image preview
         if st.session_state.selected_img_index is not None:
             selected_img = Image.open(st.session_state.selected_img)
-            selected_img.thumbnail((150, 150))
+            selected_img.thumbnail((200, 200))
             st.image(
                 selected_img,
                 caption=f"Selected Image {st.session_state.selected_img_index + 1}",
                 use_container_width=True
             )
     else:
-        st.write("No images found in the document.")
+        st.info("No images found in the uploaded document.")
+
 
 
 # General Chat Tab
