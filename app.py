@@ -9,7 +9,7 @@ from pathlib import Path
 import base64
 import numpy as np
 import cohere
-import google.generativeai as genai
+from groq import Groq  # Replace Gemini with Groq
 from dotenv import load_dotenv
 import tempfile
 import shutil
@@ -20,15 +20,15 @@ load_dotenv()
 
 # Initialize APIs
 cohere_api_key = os.getenv("COHERE_API_KEY")
-gemini_api_key = os.getenv("GOOGLE_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")  # Add Groq API key in .env
 
-if not cohere_api_key or not gemini_api_key:
+if not cohere_api_key or not groq_api_key:
     st.error("API keys not found. Please check your .env file")
     st.stop()
 
 try:
     co = cohere.Client(api_key=cohere_api_key)
-    genai.configure(api_key=gemini_api_key)
+    groq_client = Groq(api_key=groq_api_key)  # Initialize Groq client
 except Exception as e:
     st.error(f"Failed to initialize API clients: {str(e)}")
     st.stop()
@@ -36,7 +36,7 @@ except Exception as e:
 # Configuration
 MAX_PIXELS = 1568 * 1568
 SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
-GEMINI_MODEL = "gemini-1.5-flash"  # Current recommended model
+GROQ_MODEL = "mixtral-8x7b-32768"  # or "llama3-70b-8192"
 
 # Create temporary directory
 OUTPUT_DIR = Path(tempfile.mkdtemp())
@@ -145,41 +145,37 @@ def extract_pptx(file):
         st.error(f"Error processing PPTX: {str(e)}")
     return text, image_paths
 
-def ask_gemini(question, context=None, img_path=None):
-    """Query Gemini with optional context and/or image"""
+def ask_groq(question, context=None):
+    """Query Groq's LLM (no image support, but can describe images from text context)"""
     try:
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        
-        if img_path:
-            # Image-based question
-            prompt = f"""Answer the question based on the following image.
-Be concise but provide enough context for your answer.
-Question: {question}"""
-            img = Image.open(img_path)
-            response = model.generate_content([prompt, img])
-        else:
-            # Text-based question (with optional document context)
-            if context:
-                prompt = f"""Use the following document context to answer the question. 
+        # If context is available, include it in the prompt
+        if context:
+            prompt = f"""Use the following document context to answer the question. 
 If the question is unrelated to the document, use your general knowledge to answer.
 
 Document Context:
 {context}
 
 Question: {question}"""
-            else:
-                prompt = f"""Answer the following question using your general knowledge:
+        else:
+            prompt = f"""Answer the following question using your general knowledge:
 {question}"""
-            
-            response = model.generate_content(prompt)
         
-        return response.text
+        # Call Groq API
+        chat_completion = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model=GROQ_MODEL,
+            temperature=0.5,
+            max_tokens=1024,
+        )
+        
+        return chat_completion.choices[0].message.content
     except Exception as e:
-        return f"Error querying Gemini: {str(e)}"
+        return f"Error querying Groq: {str(e)}"
 
 # Streamlit UI
 st.set_page_config(page_title="Document Q&A", layout="wide")
-st.title("📄 Document Q&A with Image Analysis")
+st.title("📄 Document Q&A with Groq")
 
 # File upload section
 with st.expander("Upload Document", expanded=True):
@@ -258,8 +254,11 @@ if st.session_state.processed:
                 with cols[i % 4]:
                     img_path = st.session_state.image_paths[i]
                     st.image(img_path, caption=f"Image {i+1}", use_column_width=True)
-                    if st.button(f"Select Image {i+1}", key=f"select_{i}"):
-                        st.session_state.selected_img = img_path
+                    if st.button(f"Describe Image {i+1}", key=f"select_{i}"):
+                        # Ask Groq to describe the image (based on filename/metadata)
+                        with st.spinner("Generating description..."):
+                            description = ask_groq(f"Describe the content of image {i+1} from the document.", context=st.session_state.text)
+                            st.markdown(f"**Description:** {description}")
     
     # Q&A Section
     st.subheader("💬 Document Q&A")
@@ -267,14 +266,9 @@ if st.session_state.processed:
     
     if question:
         with st.spinner("Thinking..."):
-            if st.session_state.selected_img:
-                # Answer based on selected image
-                answer = ask_gemini(question, img_path=st.session_state.selected_img)
-            else:
-                # Answer based on document text or general knowledge
-                answer = ask_gemini(question, context=st.session_state.text if st.session_state.text else None)
+            answer = ask_groq(question, context=st.session_state.text if st.session_state.text else None)
             
-            if "Error querying Gemini" in answer:
+            if "Error querying Groq" in answer:
                 st.error(answer)
             else:
                 st.markdown(f"**Answer:** {answer}")
