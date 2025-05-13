@@ -9,26 +9,25 @@ from pathlib import Path
 import base64
 import numpy as np
 import cohere
-from groq import Groq  # Replace Gemini with Groq
+import google.generativeai as genai
 from dotenv import load_dotenv
 import tempfile
 import shutil
-import time
 
 # Load environment variables
 load_dotenv()
 
 # Initialize APIs
 cohere_api_key = os.getenv("COHERE_API_KEY")
-groq_api_key = os.getenv("GROQ_API_KEY")  # Add Groq API key in .env
+gemini_api_key = os.getenv("GOOGLE_API_KEY")
 
-if not cohere_api_key or not groq_api_key:
+if not cohere_api_key or not gemini_api_key:
     st.error("API keys not found. Please check your .env file")
     st.stop()
 
 try:
     co = cohere.Client(api_key=cohere_api_key)
-    groq_client = Groq(api_key=groq_api_key)  # Initialize Groq client
+    genai.configure(api_key=gemini_api_key)
 except Exception as e:
     st.error(f"Failed to initialize API clients: {str(e)}")
     st.stop()
@@ -36,7 +35,7 @@ except Exception as e:
 # Configuration
 MAX_PIXELS = 1568 * 1568
 SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
-GROQ_MODEL = "llama3-70b-8192"  # or "llama3-70b-8192"
+GEMINI_MODEL = "gemini-1.5-flash"  # Current recommended model
 
 # Create temporary directory
 OUTPUT_DIR = Path(tempfile.mkdtemp())
@@ -145,37 +144,23 @@ def extract_pptx(file):
         st.error(f"Error processing PPTX: {str(e)}")
     return text, image_paths
 
-def ask_groq(question, context=None):
-    """Query Groq's LLM (no image support, but can describe images from text context)"""
+def ask_gemini(question, img_path):
+    """Query Gemini about an image"""
     try:
-        # If context is available, include it in the prompt
-        if context:
-            prompt = f"""Use the following document context to answer the question. 
-If the question is unrelated to the document, use your general knowledge to answer.
-
-Document Context:
-{context}
-
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        prompt = f"""Answer the question based on the following image.
+Be concise but provide enough context for your answer.
 Question: {question}"""
-        else:
-            prompt = f"""Answer the following question using your general knowledge:
-{question}"""
         
-        # Call Groq API
-        chat_completion = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model=GROQ_MODEL,
-            temperature=0.5,
-            max_tokens=1024,
-        )
-        
-        return chat_completion.choices[0].message.content
+        img = Image.open(img_path)
+        response = model.generate_content([prompt, img])
+        return response.text
     except Exception as e:
-        return f"Error querying Groq: {str(e)}"
+        return f"Error querying Gemini: {str(e)}"
 
 # Streamlit UI
 st.set_page_config(page_title="Document Q&A", layout="wide")
-st.title("📄 Document Q&A with Groq")
+st.title("📄 Document Q&A with Image Analysis")
 
 # File upload section
 with st.expander("Upload Document", expanded=True):
@@ -191,17 +176,6 @@ if 'processed' not in st.session_state:
     st.session_state.text = ""
     st.session_state.image_paths = []
     st.session_state.selected_img = None
-    st.session_state.last_upload_time = None
-
-# Clear session if new file is uploaded
-if uploaded_file:
-    current_file_name = uploaded_file.name
-    if 'current_file' not in st.session_state or st.session_state.current_file != current_file_name:
-        cleanup()
-        st.session_state.clear()
-        st.session_state.current_file = current_file_name
-        st.session_state.processed = False
-        st.rerun()
 
 # Process file when uploaded
 if uploaded_file and not st.session_state.processed:
@@ -222,61 +196,48 @@ if uploaded_file and not st.session_state.processed:
                 f.write(st.session_state.text)
             
             st.session_state.processed = True
-            st.session_state.last_upload_time = time.time()
             st.success("Document processed successfully!")
         except Exception as e:
             st.error(f"Failed to process document: {str(e)}")
             cleanup()
 
-# Auto-clear session after 2 hours of inactivity
-if st.session_state.processed and 'last_upload_time' in st.session_state:
-    if time.time() - st.session_state.last_upload_time > 7200:  # 2 hours
-        cleanup()
-        st.session_state.clear()
-        st.rerun()
-
 # Show extracted content
 if st.session_state.processed:
-    # Display images in a responsive grid
+    # Display images in a grid
     if st.session_state.image_paths:
         st.subheader("📸 Extracted Images")
-        
-        # Calculate number of rows needed (4 images per row)
-        num_images = len(st.session_state.image_paths)
-        num_rows = (num_images + 3) // 4  # Round up division
-        
-        for row in range(num_rows):
-            cols = st.columns(4)
-            start_idx = row * 4
-            end_idx = min(start_idx + 4, num_images)
-            
-            for i in range(start_idx, end_idx):
-                with cols[i % 4]:
-                    img_path = st.session_state.image_paths[i]
-                    st.image(img_path, caption=f"Image {i+1}", use_column_width=True)
-                    if st.button(f"Describe Image {i+1}", key=f"select_{i}"):
-                        # Ask Groq to describe the image (based on filename/metadata)
-                        with st.spinner("Generating description..."):
-                            description = ask_groq(f"Describe the content of image {i+1} from the document.", context=st.session_state.text)
-                            st.markdown(f"**Description:** {description}")
+        cols = st.columns(4)
+        for i, img_path in enumerate(st.session_state.image_paths):
+            with cols[i % 4]:
+                st.image(img_path, caption=f"Image {i+1}", use_container_width=True)  # Updated parameter
+                if st.button(f"Select Image {i+1}", key=f"select_{i}"):
+                    st.session_state.selected_img = img_path
     
-    # Q&A Section
-    st.subheader("💬 Document Q&A")
-    question = st.text_input("Ask a question about the document or anything else")
-    
-    if question:
-        with st.spinner("Thinking..."):
-            answer = ask_groq(question, context=st.session_state.text if st.session_state.text else None)
-            
-            if "Error querying Groq" in answer:
-                st.error(answer)
-            else:
-                st.markdown(f"**Answer:** {answer}")
+    # Show selected image
+    if st.session_state.selected_img:
+        st.subheader("🔍 Selected Image")
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.image(st.session_state.selected_img, use_container_width=True)  # Updated parameter
+        with col2:
+            question = st.text_input("Ask a question about this image")
+            if question:
+                with st.spinner("Analyzing image..."):
+                    answer = ask_gemini(question, st.session_state.selected_img)
+                    if "Error querying Gemini" in answer:
+                        st.error(answer)
+                    else:
+                        st.markdown(f"**Answer:** {answer}")
     
     # Show extracted text
     st.subheader("📝 Extracted Text")
-    st.text_area("Full Text", st.session_state.text, height=300, label_visibility="collapsed")
+    st.text_area("Full Text", st.session_state.text, height=300)
 
-# Register cleanup when app closes
+# Cleanup when done
+if st.button("Clear Session"):
+    cleanup()
+    st.session_state.clear()
+    st.rerun()
+
 import atexit
 atexit.register(cleanup)
