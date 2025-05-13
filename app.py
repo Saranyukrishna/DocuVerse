@@ -254,20 +254,8 @@ with tab1:
 with tab2:
     st.subheader("Image Analysis")
     
-    # Input section at the top
-    input_col, img_col = st.columns([3, 1])
-    
-    with input_col:
-        st.write("**Image Analysis Input**")
-        user_image_input = st.text_input(
-            "Ask about the image:", 
-            key="image_input", 
-            placeholder="Type your question here... (Select an image first)",
-            label_visibility="collapsed",
-            disabled=not st.session_state.selected_img
-        )
-        image_send_button = st.button("Send", key="image_send", disabled=not st.session_state.selected_img)
-    
+    # Image selection and display at the top
+    img_col, _ = st.columns([1, 3])
     with img_col:
         if st.session_state.selected_img:
             try:
@@ -279,9 +267,36 @@ with tab2:
         else:
             st.info("No image selected")
 
-    # Chat history container
+    # Chat history container (now placed above the input)
     if st.session_state.selected_img:
         image_chat_container = st.container()
+        
+        # Display chat history first
+        with image_chat_container:
+            for message in st.session_state.image_chat_history:
+                if isinstance(message, HumanMessage):
+                    st.markdown(
+                        f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
+                        unsafe_allow_html=True
+                    )
+                elif isinstance(message, AIMessage):
+                    st.markdown(
+                        f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
+                        unsafe_allow_html=True
+                    )
+
+        # Input section at the bottom (after chat history)
+        input_col = st.container()
+        with input_col:
+            st.write("**Ask about the image**")
+            user_image_input = st.text_input(
+                "Ask about the image:", 
+                key="image_input", 
+                placeholder="Type your question here...",
+                label_visibility="collapsed",
+                disabled=not st.session_state.selected_img
+            )
+            image_send_button = st.button("Send", key="image_send", disabled=not st.session_state.selected_img)
         
         # Handle user input and generate responses
         if image_send_button and user_image_input:
@@ -297,23 +312,9 @@ with tab2:
                 )
                 st.session_state.image_chat_history.append(AIMessage(content=answer))
                 st.session_state.scroll = True
-                st.rerun()  # This maintains the chat loop by refreshing the interface
-        
-        # Display chat history
-        with image_chat_container:
-            for message in st.session_state.image_chat_history:
-                if isinstance(message, HumanMessage):
-                    st.markdown(
-                        f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
-                        unsafe_allow_html=True
-                    )
-                elif isinstance(message, AIMessage):
-                    st.markdown(
-                        f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
-                        unsafe_allow_html=True
-                    )
+                st.rerun()
 
-    # Image selection grid
+    # Image selection grid at the bottom
     if st.session_state.processed and st.session_state.image_paths:
         st.divider()
         st.write("Select an image to analyze:")
@@ -334,11 +335,12 @@ with tab2:
                             st.image(img, use_container_width=True)
                             if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):
                                 st.session_state.selected_img = img_path
-                                st.rerun()  # This maintains the flow when selecting new images
+                                st.session_state.image_chat_history = []  # Clear chat when new image selected
+                                st.rerun()
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
     else:
-        st.write("No images found in the document.") 
+        st.write("No images found in the document.")
 # general chat
 with tab3:
     st.subheader("General Chat")
