@@ -146,15 +146,18 @@ def search_image(question, embeddings, image_paths):
 
 
 def ask_gemini(question, img_path):
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    prompt = f"""Answer the question based on the following image.
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = f"""Answer the question based on the following image.
 Don't use markdown.
 Please provide enough context for your answer.
 
 Question: {question}"""
-    img = Image.open(img_path)
-    response = model.generate_content([prompt, img])
-    return response.text
+        img = Image.open(img_path)
+        response = model.generate_content([prompt, img])
+        return response.text
+    except Exception as e:
+        return f"Error occurred: {str(e)}"
 
 
 st.title("Document Q&A: Extract, View, Ask (Text + Image)")
@@ -199,15 +202,21 @@ if uploaded_file:
 
     selected_img = None
     for i, img_path in enumerate(image_paths):
-        if st.button(f"Ask based on Image {i + 1}"):
+        if st.button(f"Select Image {i + 1}"):
             selected_img = img_path
             st.image(selected_img, caption=f"Selected Image {i + 1}", use_container_width=True)
 
-    if selected_img and question:
-        st.write("Asking the model...")
-        answer = ask_gemini(question, selected_img)
-        st.success("Answer:")
-        st.write(answer)
+    if selected_img:
+        question_button = st.button("Get Answer")
+
+        if question_button and question:
+            st.write("Asking the model...")
+            answer = ask_gemini(question, selected_img)
+            if "Error occurred" in answer:
+                st.error(answer)
+            else:
+                st.success("Answer:")
+                st.write(answer)
 
     st.subheader("Full Extracted Text")
     st.text_area("Text", text, height=300)
