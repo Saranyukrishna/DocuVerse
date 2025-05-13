@@ -1,4 +1,4 @@
-the Image Analysis tab including the tab persistence fix so that selecting an image doesn't redirect back to the "Text Analysis" tab.   import streamlit as st
+import streamlit as st
 import fitz  # PyMuPDF
 from docx import Document
 from pptx import Presentation
