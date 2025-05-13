@@ -254,7 +254,20 @@ with tab1:
 with tab2:
     st.subheader("Image Analysis")
     
-    # Image selection and display at the top
+    # Input section always visible at the top
+    input_col = st.container()
+    with input_col:
+        st.write("**Ask about the image**")
+        user_image_input = st.text_input(
+            "Ask about the image:", 
+            key="image_input", 
+            placeholder="Type your question here... (Select an image first)",
+            label_visibility="collapsed",
+            disabled=not st.session_state.selected_img
+        )
+        image_send_button = st.button("Send", key="image_send", disabled=not st.session_state.selected_img)
+
+    # Image selection and display below input
     img_col, _ = st.columns([1, 3])
     with img_col:
         if st.session_state.selected_img:
@@ -267,11 +280,11 @@ with tab2:
         else:
             st.info("No image selected")
 
-    # Chat history container (now placed above the input)
+    # Chat history container (only shown when image is selected)
     if st.session_state.selected_img:
         image_chat_container = st.container()
         
-        # Display chat history first
+        # Display chat history
         with image_chat_container:
             for message in st.session_state.image_chat_history:
                 if isinstance(message, HumanMessage):
@@ -284,19 +297,6 @@ with tab2:
                         f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
                         unsafe_allow_html=True
                     )
-
-        # Input section at the bottom (after chat history)
-        input_col = st.container()
-        with input_col:
-            st.write("**Ask about the image**")
-            user_image_input = st.text_input(
-                "Ask about the image:", 
-                key="image_input", 
-                placeholder="Type your question here...",
-                label_visibility="collapsed",
-                disabled=not st.session_state.selected_img
-            )
-            image_send_button = st.button("Send", key="image_send", disabled=not st.session_state.selected_img)
         
         # Handle user input and generate responses
         if image_send_button and user_image_input:
