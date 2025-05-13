@@ -1,5 +1,5 @@
 import streamlit as st
-import fitz  # PyMuPDF
+import fitz
 from docx import Document
 from pptx import Presentation
 from PIL import Image
@@ -7,21 +7,33 @@ import io
 import os
 import time
 from pathlib import Path
+import base64
+import numpy as np
+import cohere
+from google import genai
+from dotenv import load_dotenv
+
+load_dotenv()
+
+cohere_api_key = os.getenv("COHERE_API_KEY")
+gemini_api_key = os.getenv("GOOGLE_API_KEY")
+
+co = cohere.ClientV2(api_key=cohere_api_key)
+genai.configure(api_key=gemini_api_key)
+client = genai
 
 OUTPUT_DIR = Path("output")
 IMAGES_DIR = OUTPUT_DIR / "images"
 TEXT_FILE = OUTPUT_DIR / "extracted_text.txt"
+MAX_PIXELS = 1568 * 1568
 
-def save_text(text):
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    with open(TEXT_FILE, "w", encoding="utf-8") as f:
-        f.write(text)
 
 def save_image(image_pil, image_count):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    image_path = IMAGES_DIR / f"image_{image_count}.png"
-    image_pil.save(image_path)
-    return str(image_path)
+    img_path = IMAGES_DIR / f"image_{image_count}.png"
+    image_pil.save(img_path)
+    return str(img_path)
+
 
 def extract_pdf(file):
     text = ""
@@ -42,6 +54,7 @@ def extract_pdf(file):
     pdf.close()
     return text, image_paths
 
+
 def extract_docx(file):
     text = ""
     image_paths = []
@@ -61,17 +74,18 @@ def extract_docx(file):
             image_count += 1
     return text, image_paths
 
+
 def extract_pptx(file):
     text = ""
     image_paths = []
     prs = Presentation(file)
     image_count = 1
 
-    for i, slide in enumerate(prs.slides):
+    for slide in prs.slides:
         for shape in slide.shapes:
             if hasattr(shape, "text"):
                 text += shape.text + "\n"
-            if shape.shape_type == 13:  # Picture
+            if shape.shape_type == 13:
                 img_stream = shape.image.blob
                 img_pil = Image.open(io.BytesIO(img_stream))
                 img_path = save_image(img_pil, image_count)
@@ -79,49 +93,119 @@ def extract_pptx(file):
                 image_count += 1
     return text, image_paths
 
-def main():
-    st.title("Document Extractor: Text + Images + LLM Ready")
 
-    uploaded_file = st.file_uploader("Upload PDF, DOCX, or PPTX", type=["pdf", "docx", "pptx"])
-    if uploaded_file:
-        start_time = time.time()
-        file_ext = uploaded_file.name.split('.')[-1].lower()
+def resize_image(pil_image):
+    org_width, org_height = pil_image.size
+    if org_width * org_height > MAX_PIXELS:
+        scale_factor = (MAX_PIXELS / (org_width * org_height)) ** 0.5
+        new_width = int(org_width * scale_factor)
+        new_height = int(org_height * scale_factor)
+        pil_image.thumbnail((new_width, new_height))
 
-        # Clear previous data
-        if OUTPUT_DIR.exists():
-            for f in OUTPUT_DIR.glob("*"):
-                if f.is_file():
-                    f.unlink()
-            if IMAGES_DIR.exists():
-                for img in IMAGES_DIR.glob("*"):
-                    img.unlink()
 
-        if file_ext == "pdf":
-            text, image_paths = extract_pdf(uploaded_file)
-        elif file_ext == "docx":
-            text, image_paths = extract_docx(uploaded_file)
-        elif file_ext == "pptx":
-            text, image_paths = extract_pptx(uploaded_file)
+def base64_from_image(img_path):
+    pil_image = Image.open(img_path)
+    img_format = pil_image.format or "PNG"
+    resize_image(pil_image)
+    with io.BytesIO() as buffer:
+        pil_image.save(buffer, format=img_format)
+        encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return f"data:image/{img_format.lower()};base64,{encoded}"
+
+
+@st.cache_data
+def generate_embeddings(image_paths):
+    doc_embeddings = []
+    for path in image_paths:
+        api_input_document = {
+            "content": [
+                {"type": "image", "image": base64_from_image(path)},
+            ]
+        }
+        resp = co.embed(
+            model="embed-v4.0",
+            input_type="search_document",
+            embedding_types=["float"],
+            inputs=[api_input_document],
+        )
+        emb = np.asarray(resp.embeddings.float[0])
+        doc_embeddings.append(emb)
+    return np.vstack(doc_embeddings)
+
+
+def search_image(question, embeddings, image_paths):
+    resp = co.embed(
+        model="embed-v4.0",
+        input_type="search_query",
+        embedding_types=["float"],
+        texts=[question],
+    )
+    query_emb = np.asarray(resp.embeddings.float[0])
+    scores = np.dot(query_emb, embeddings.T)
+    top_idx = np.argmax(scores)
+    return image_paths[top_idx]
+
+
+def ask_gemini(question, img_path):
+    prompt = [f"""Answer the question based on the following image.
+Don't use markdown.
+Please provide enough context for your answer.
+
+Question: {question}""", Image.open(img_path)]
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash-preview-04-17",
+        contents=prompt
+    )
+    return response.text
+
+
+st.title("Document Q&A: Extract, View, Ask (Text + Image)")
+
+uploaded_file = st.file_uploader("Upload PDF, DOCX or PPTX", type=["pdf", "docx", "pptx"])
+question = st.text_input("Ask a question based on image content")
+
+if uploaded_file:
+    file_ext = uploaded_file.name.split(".")[-1].lower()
+
+    if OUTPUT_DIR.exists():
+        for f in OUTPUT_DIR.glob("*"):
+            if f.is_file():
+                f.unlink()
+        if IMAGES_DIR.exists():
+            for img in IMAGES_DIR.glob("*"):
+                img.unlink()
+
+    if file_ext == "pdf":
+        text, image_paths = extract_pdf(uploaded_file)
+    elif file_ext == "docx":
+        text, image_paths = extract_docx(uploaded_file)
+    elif file_ext == "pptx":
+        text, image_paths = extract_pptx(uploaded_file)
+    else:
+        st.error("Unsupported file.")
+        st.stop()
+
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    with open(TEXT_FILE, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    st.success("Extraction complete!")
+    st.subheader("Extracted Images")
+
+    selected_img = None
+    for img_path in image_paths:
+        if st.button(f"Ask based on {Path(img_path).name}"):
+            selected_img = img_path
+
+    if question:
+        if selected_img:
+            st.image(selected_img, caption="Selected Image", use_column_width=True)
+            answer = ask_gemini(question, selected_img)
+            st.success("Answer:")
+            st.write(answer)
         else:
-            st.error("Unsupported file type.")
-            return
+            st.warning("Please click a button to select an image.")
 
-        save_text(text)
-
-        st.success(f"Text and {len(image_paths)} image(s) saved in 'output/'")
-        st.text_area("Extracted Text", text, height=300)
-
-        for img_path in image_paths:
-            st.image(img_path, caption=img_path, use_column_width=True)
-
-        st.markdown(f"**Text File:** `{TEXT_FILE}`")
-        st.markdown(f"**Image Directory:** `{IMAGES_DIR}`")
-
-        st.success(f"Extraction done in {time.time() - start_time:.2f} seconds")
-
-        if st.button("Pass to LLM"):
-            st.info("Text and image paths are ready to be passed to your LLM.")
-            st.code(f"with open('{TEXT_FILE}') as f: content = f.read()\n# image_paths = {image_paths}", language="python")
-
-if __name__ == "__main__":
-    main()
+    st.subheader("Full Extracted Text")
+    st.text_area("Text", text, height=300)
