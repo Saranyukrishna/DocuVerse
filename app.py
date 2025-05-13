@@ -10,7 +10,7 @@ from pathlib import Path
 import base64
 import numpy as np
 import cohere
-import google.generativeai as genai
+import google.generativeai as genai 
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,16 +20,16 @@ gemini_api_key = os.getenv("GOOGLE_API_KEY")
 
 co = cohere.ClientV2(api_key=cohere_api_key)
 genai.configure(api_key=gemini_api_key)
+client = genai
 
 OUTPUT_DIR = Path("output")
 IMAGES_DIR = OUTPUT_DIR / "images"
 TEXT_FILE = OUTPUT_DIR / "extracted_text.txt"
-MAX_PIXELS = 768 * 768
+MAX_PIXELS = 1568 * 1568
 
 
 def save_image(image_pil, image_count):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    resize_image(image_pil)
     img_path = IMAGES_DIR / f"image_{image_count}.png"
     image_pil.save(img_path)
     return str(img_path)
@@ -114,7 +114,6 @@ def base64_from_image(img_path):
 
 
 @st.cache_data
-
 def generate_embeddings(image_paths):
     doc_embeddings = []
     for path in image_paths:
@@ -153,9 +152,13 @@ Don't use markdown.
 Please provide enough context for your answer.
 
 Question: {question}""", Image.open(img_path)]
-
-    model = genai.GenerativeModel(model_name="gemini-2.5-flash-preview-04-17")
-    response = model.generate_content(prompt)
+    
+    # Directly use the client to generate content
+    response = client.generate_content(
+        model="gemini-2.5-flash-preview-04-17",
+        contents=prompt
+    )
+    
     return response.text
 
 
@@ -193,12 +196,10 @@ if uploaded_file:
     st.subheader("Extracted Images")
 
     selected_img = None
-    col1, col2 = st.columns(2)
     for i, img_path in enumerate(image_paths):
-        with (col1 if i % 2 == 0 else col2):
-            if st.button(f"Select Image {i + 1}"):
-                selected_img = img_path
-            st.image(img_path, caption=f"Image {i + 1}", width=250)
+        st.image(img_path, caption=f"Image {i + 1}", width=250)
+        if st.button(f"Ask based on Image {i + 1}"):
+            selected_img = img_path
 
     if question:
         if selected_img:
@@ -207,7 +208,7 @@ if uploaded_file:
             st.success("Answer:")
             st.write(answer)
         else:
-            st.warning("Please select an image first.")
+            st.warning("Please click a button to select an image.")
 
     st.subheader("Full Extracted Text")
     st.text_area("Text", text, height=300)
