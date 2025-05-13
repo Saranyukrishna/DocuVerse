@@ -290,8 +290,30 @@ with tab2:
     st.subheader("Image Analysis")
     
     if st.session_state.processed and st.session_state.image_paths:
-        selected_image = st.selectbox("Select an image to analyze", st.session_state.image_paths)
-        st.image(selected_image, caption="Selected Image", use_column_width=True)
+        # Create a grid of image thumbnails for selection
+        st.write("Select an image to analyze:")
+        
+        # Create columns for the thumbnail grid
+        cols = st.columns(3)
+        selected_idx = 0
+        
+        # Display thumbnails in a grid
+        for i, img_path in enumerate(st.session_state.image_paths):
+            with cols[i % 3]:
+                try:
+                    img = Image.open(img_path)
+                    img.thumbnail((200, 200))
+                    if st.button(f"Image {i+1}", key=f"img_btn_{i}"):
+                        selected_idx = i
+                    st.image(img, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error loading image: {str(e)}")
+        
+        # Show the selected image larger
+        st.divider()
+        st.subheader(f"Analyzing Image {selected_idx+1}")
+        selected_image = st.session_state.image_paths[selected_idx]
+        st.image(selected_image, caption=f"Image {selected_idx+1}", use_container_width=True)
         
         # Chat interface for image analysis
         image_chat_container = st.container()
