@@ -293,8 +293,8 @@ with tab1:
 with tab2:
     st.subheader("Image Analysis")
 
-    # Create two columns: one for chat input, one for selected image
-    input_col, preview_col = st.columns([2, 1])
+    # --- Top layout with input and selected image preview ---
+    input_col, image_col = st.columns([2, 1])
 
     with input_col:
         user_image_input = st.text_input(
@@ -304,22 +304,29 @@ with tab2:
         )
         image_send_button = st.button("Send", key="image_send")
 
-    with preview_col:
-        if st.session_state.selected_img is not None:
+    with image_col:
+        if "selected_img" in st.session_state and st.session_state.selected_img:
             try:
                 selected_img = Image.open(st.session_state.selected_img)
                 selected_img.thumbnail((250, 250))
-                st.image(selected_img, caption="Selected Image", use_container_width=True)
+                st.image(
+                    selected_img,
+                    caption="Selected Image",
+                    use_container_width=True
+                )
             except Exception as e:
-                st.error(f"Failed to load image: {e}")
+                st.error(f"Could not load selected image: {e}")
         else:
             st.info("No image selected.")
 
+    # --- Chat history container ---
     image_chat_container = st.container()
+    render_chat(image_chat_container, st.session_state.image_chat_history)
 
+    # --- Handle message sending ---
     if image_send_button and user_image_input:
         st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
-        if user_image_input.lower() == 'close the chat':
+        if user_image_input.strip().lower() == "close the chat":
             st.stop()
 
         with st.spinner("Analyzing image..."):
@@ -330,11 +337,8 @@ with tab2:
             )
             st.session_state.image_chat_history.append(AIMessage(content=answer))
             st.session_state.scroll = True
-            st.rerun()
 
-    render_chat(image_chat_container, st.session_state.image_chat_history)
-
-    # Image grid
+    # --- Image selection grid ---
     if st.session_state.processed and st.session_state.image_paths:
         st.write("Select an image to analyze:")
         num_cols = 3
