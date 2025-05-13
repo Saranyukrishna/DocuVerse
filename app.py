@@ -313,7 +313,6 @@ with tab2:
 
     if st.session_state.processed and st.session_state.image_paths:
 
-        # Display image selection thumbnails first
         st.write("Select an image to analyze:")
         if 'selected_img_index' not in st.session_state:
             st.session_state.selected_img_index = None
@@ -332,7 +331,7 @@ with tab2:
                         try:
                             img = Image.open(img_path)
                             img.thumbnail((200, 200))
-                            st.image(img, use_column_width=True)
+                            st.image(img, use_container_width=True)
                             if st.button(f"Select Image {img_idx+1}", 
                                          key=f"img_btn_{img_idx}",
                                          on_click=lambda idx=img_idx: set_image_selection(idx)):
@@ -340,37 +339,42 @@ with tab2:
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
 
-        # After image is selected, show chat + selected image
+        # Show chat and selected image only if one is selected
         if st.session_state.selected_img_index is not None:
             col1, col2 = st.columns([3, 1])
-            
+
             with col1:
                 user_image_input = st.text_input(
-                    "Ask about the image:", 
+                    "Ask about the image:",
                     key="image_input",
                     placeholder="Type your question here...",
-                    label_visibility="collapsed"
                 )
                 image_send_button = st.button("Send", key="image_send")
+
+                if image_send_button and user_image_input:
+                    st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
+                    if user_image_input.lower() == 'close the chat':
+                        st.stop()
+                    with st.spinner("Analyzing image..."):
+                        answer = ask_gemini(
+                            user_image_input,
+                            img_path=st.session_state.selected_img,
+                            context=st.session_state.text
+                        )
+                        st.session_state.image_chat_history.append(AIMessage(content=answer))
+                        st.session_state.scroll = True
+                        st.experimental_rerun()
+
+                render_chat(image_chat_container, st.session_state.image_chat_history)
 
             with col2:
                 selected_img = Image.open(st.session_state.selected_img)
                 selected_img.thumbnail((150, 150))
-                st.image(selected_img, 
-                         caption=f"Selected Image {st.session_state.selected_img_index+1}",
-                         use_container_width=True)
-
-            if image_send_button and user_image_input:
-                st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
-                if user_image_input.lower() == 'close the chat':
-                    st.stop()
-                with st.spinner("Analyzing image..."):
-                    answer = ask_gemini(user_image_input, img_path=st.session_state.selected_img, context=st.session_state.text)
-                    st.session_state.image_chat_history.append(AIMessage(content=answer))
-                    st.session_state.scroll = True
-                    st.experimental_rerun()
-
-            render_chat(image_chat_container, st.session_state.image_chat_history)
+                st.image(
+                    selected_img,
+                    caption=f"Selected Image {st.session_state.selected_img_index+1}",
+                    use_container_width=True
+                )
 
     else:
         st.write("No images found in the document.")
@@ -380,6 +384,7 @@ def set_image_selection(idx):
     st.session_state.selected_img_index = idx
     st.session_state.selected_img = st.session_state.image_paths[idx]
     st.session_state.current_tab = "Image Analysis"
+
 
 # General Chat Tab
 with tab3:
