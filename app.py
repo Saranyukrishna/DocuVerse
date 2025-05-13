@@ -146,7 +146,7 @@ def extract_pptx(file):
 def ask_gemini(question, img_path):
     """Query Gemini about an image"""
     try:
-        model = genai.GenerativeModel('gemini-pro-vision')
+        model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
         prompt = f"""Answer the question based on the following image.
 Be concise but provide enough context for your answer.
 Question: {question}"""
