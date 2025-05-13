@@ -7,3 +7,5 @@ numpy
 cohere
 google-generativeai
 python-dotenv
+requests
+groq-client
