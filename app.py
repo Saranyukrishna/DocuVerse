@@ -35,6 +35,7 @@ except Exception as e:
 # Configuration
 MAX_PIXELS = 1568 * 1568
 SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
+GEMINI_MODEL = "gemini-1.5-flash"  # Current recommended model
 
 # Create temporary directory
 OUTPUT_DIR = Path(tempfile.mkdtemp())
@@ -146,7 +147,7 @@ def extract_pptx(file):
 def ask_gemini(question, img_path):
     """Query Gemini about an image"""
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
+        model = genai.GenerativeModel(GEMINI_MODEL)
         prompt = f"""Answer the question based on the following image.
 Be concise but provide enough context for your answer.
 Question: {question}"""
@@ -208,7 +209,7 @@ if st.session_state.processed:
         cols = st.columns(4)
         for i, img_path in enumerate(st.session_state.image_paths):
             with cols[i % 4]:
-                st.image(img_path, caption=f"Image {i+1}", use_column_width=True)
+                st.image(img_path, caption=f"Image {i+1}", use_container_width=True)  # Updated parameter
                 if st.button(f"Select Image {i+1}", key=f"select_{i}"):
                     st.session_state.selected_img = img_path
     
@@ -217,13 +218,16 @@ if st.session_state.processed:
         st.subheader("🔍 Selected Image")
         col1, col2 = st.columns([1, 3])
         with col1:
-            st.image(st.session_state.selected_img, use_column_width=True)
+            st.image(st.session_state.selected_img, use_container_width=True)  # Updated parameter
         with col2:
             question = st.text_input("Ask a question about this image")
             if question:
                 with st.spinner("Analyzing image..."):
                     answer = ask_gemini(question, st.session_state.selected_img)
-                    st.markdown(f"**Answer:** {answer}")
+                    if "Error querying Gemini" in answer:
+                        st.error(answer)
+                    else:
+                        st.markdown(f"**Answer:** {answer}")
     
     # Show extracted text
     st.subheader("📝 Extracted Text")
