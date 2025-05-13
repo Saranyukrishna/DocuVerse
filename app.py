@@ -13,6 +13,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import tempfile
 import shutil
+from langchain.schema import HumanMessage, AIMessage
 
 # Load environment variables
 load_dotenv()
@@ -186,6 +187,21 @@ Question: {question}"""
 st.set_page_config(page_title="Document Q&A", layout="wide")
 st.title("📄 Document Q&A with Image Analysis")
 
+# Initialize session state for chat histories
+if 'text_chat_history' not in st.session_state:
+    st.session_state.text_chat_history = []
+if 'image_chat_history' not in st.session_state:
+    st.session_state.image_chat_history = []
+if 'general_chat_history' not in st.session_state:
+    st.session_state.general_chat_history = []
+if 'scroll' not in st.session_state:
+    st.session_state.scroll = False
+if 'processed' not in st.session_state:
+    st.session_state.processed = False
+    st.session_state.text = ""
+    st.session_state.image_paths = []
+    st.session_state.selected_img = None
+
 # File upload section
 with st.expander("Upload Document", expanded=True):
     uploaded_file = st.file_uploader(
@@ -193,14 +209,6 @@ with st.expander("Upload Document", expanded=True):
         type=SUPPORTED_TYPES,
         help=f"Supported formats: {', '.join(SUPPORTED_TYPES)}"
     )
-
-# Initialize session state
-if 'processed' not in st.session_state:
-    st.session_state.processed = False
-    st.session_state.text = ""
-    st.session_state.image_paths = []
-    st.session_state.selected_img = None
-    st.session_state.active_tab = "text"  # Track which tab is active
 
 # Process file when uploaded
 if uploaded_file and not st.session_state.processed:
@@ -226,51 +234,130 @@ if uploaded_file and not st.session_state.processed:
             st.error(f"Failed to process document: {str(e)}")
             cleanup()
 
-# Show extracted content
-if st.session_state.processed:
-    # Create tabs for text and image analysis
-    tab1, tab2, tab3 = st.tabs(["📝 Text Analysis", "🖼️ Image Analysis", "💬 General Chat"])
+# Create tabs for different chat interfaces
+tab1, tab2, tab3 = st.tabs(["📝 Text Analysis", "🖼️ Image Analysis", "💬 General Chat"])
+
+def render_chat(container, chat_history):
+    """Render chat messages in a container"""
+    with container:
+        for message in chat_history:
+            if isinstance(message, HumanMessage):
+                st.markdown(
+                    f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
+                    unsafe_allow_html=True
+                )
+            elif isinstance(message, AIMessage):
+                st.markdown(
+                    f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
+                    unsafe_allow_html=True
+                )
+
+# Text Analysis Tab
+with tab1:
+    st.subheader("Text Analysis")
     
-    with tab1:
-        st.subheader("Text Analysis")
-        st.text_area("Extracted Text", st.session_state.text, height=200)
+    # Display extracted text
+    if st.session_state.processed:
+        with st.expander("View Extracted Text"):
+            st.text_area("Extracted Text", st.session_state.text, height=200, label_visibility="collapsed")
+    
+    # Chat interface for text analysis
+    text_chat_container = st.container()
+    
+    user_text_input = st.text_input(
+        "Ask about the text content:", 
+        key="text_input",
+        placeholder="Type your question here...",
+        label_visibility="collapsed"
+    )
+    text_send_button = st.button("Send", key="text_send")
+    
+    if text_send_button and user_text_input:
+        st.session_state.text_chat_history.append(HumanMessage(content=user_text_input))
+        if user_text_input.lower() == 'close the chat':
+            st.stop()
         
-        text_question = st.text_input("Ask a question about the text content")
-        if text_question:
-            with st.spinner("Analyzing text..."):
-                answer = ask_gemini(text_question, context=st.session_state.text)
-                st.write("Answer:", answer)
-
-    with tab2:
-        st.subheader("Image Analysis")
-        if st.session_state.image_paths:
-            selected_image = st.selectbox("Select an image to analyze", st.session_state.image_paths)
-            st.image(selected_image, caption="Selected Image", use_column_width=True)
-
-            image_question = st.text_input("Ask a question about the image")
-            if image_question:
-                with st.spinner("Analyzing image..."):
-                    answer = ask_gemini(image_question, img_path=selected_image, context=st.session_state.text)
-                    st.write("Answer:", answer)
-        else:
-            st.write("No images found in the document.")
+        with st.spinner("Analyzing text..."):
+            answer = ask_gemini(user_text_input, context=st.session_state.text)
+            st.session_state.text_chat_history.append(AIMessage(content=answer))
+            st.session_state.scroll = True
+            st.rerun()
     
-    with tab3:
-        st.subheader("General Chat")
-        general_question = st.text_input("Ask any general question")
-        if general_question:
-            with st.spinner("Thinking..."):
-                answer = ask_gemini(general_question)
-                st.write("Answer:", answer)
+    render_chat(text_chat_container, st.session_state.text_chat_history)
 
-else:
-    # If no document is uploaded, show general chat interface
+# Image Analysis Tab
+with tab2:
+    st.subheader("Image Analysis")
+    
+    if st.session_state.processed and st.session_state.image_paths:
+        selected_image = st.selectbox("Select an image to analyze", st.session_state.image_paths)
+        st.image(selected_image, caption="Selected Image", use_column_width=True)
+        
+        # Chat interface for image analysis
+        image_chat_container = st.container()
+        
+        user_image_input = st.text_input(
+            "Ask about the image:", 
+            key="image_input",
+            placeholder="Type your question here...",
+            label_visibility="collapsed"
+        )
+        image_send_button = st.button("Send", key="image_send")
+        
+        if image_send_button and user_image_input:
+            st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
+            if user_image_input.lower() == 'close the chat':
+                st.stop()
+            
+            with st.spinner("Analyzing image..."):
+                answer = ask_gemini(user_image_input, img_path=selected_image, context=st.session_state.text)
+                st.session_state.image_chat_history.append(AIMessage(content=answer))
+                st.session_state.scroll = True
+                st.rerun()
+        
+        render_chat(image_chat_container, st.session_state.image_chat_history)
+    else:
+        st.write("No images found in the document.")
+
+# General Chat Tab
+with tab3:
     st.subheader("General Chat")
-    general_question = st.text_input("Ask any question")
-    if general_question:
+    
+    # Chat interface for general questions
+    general_chat_container = st.container()
+    
+    user_general_input = st.text_input(
+        "Ask any question:", 
+        key="general_input",
+        placeholder="Type your question here...",
+        label_visibility="collapsed"
+    )
+    general_send_button = st.button("Send", key="general_send")
+    
+    if general_send_button and user_general_input:
+        st.session_state.general_chat_history.append(HumanMessage(content=user_general_input))
+        if user_general_input.lower() == 'close the chat':
+            st.stop()
+        
         with st.spinner("Thinking..."):
-            answer = ask_gemini(general_question)
-            st.write("Answer:", answer)
+            answer = ask_gemini(user_general_input)
+            st.session_state.general_chat_history.append(AIMessage(content=answer))
+            st.session_state.scroll = True
+            st.rerun()
+    
+    render_chat(general_chat_container, st.session_state.general_chat_history)
+
+# Auto-scroll to bottom of chat
+if st.session_state.scroll:
+    st.session_state.scroll = False
+    st.markdown(
+        """
+        <script>
+            window.scrollTo(0, document.body.scrollHeight);
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
 
 # Clean up when done
 st.session_state.cleanup = cleanup
