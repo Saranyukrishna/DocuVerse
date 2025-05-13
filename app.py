@@ -289,6 +289,7 @@ with tab1:
 # ... (keep all the imports and initial setup code the same until the Image Analysis Tab)
 
 # Image Analysis Tab
+# Image Analysis Tab
 with tab2:
     st.subheader("Image Analysis")
     
@@ -331,6 +332,10 @@ with tab2:
         image_paths = st.session_state.image_paths
         rows = (len(image_paths) + num_cols - 1) // num_cols
 
+        # Store current tab in session state
+        if 'current_tab' not in st.session_state:
+            st.session_state.current_tab = "Image Analysis"
+
         for row in range(rows):
             cols = st.columns(num_cols)
             for col_idx in range(num_cols):
@@ -341,14 +346,17 @@ with tab2:
                         try:
                             img = Image.open(img_path)
                             img.thumbnail((200, 200))
-                            st.image(img, use_container_width=True)
-                            if st.button(f"Select Image {img_idx+1}", key=f"btn_{img_idx}"):
+                            st.image(img, use_column_width=True)
+                            if st.button(f"Select Image {img_idx+1}", key=f"img_btn_{img_idx}"):
                                 st.session_state.selected_img_index = img_idx
                                 st.session_state.selected_img = img_path
-                                st.rerun()
+                                st.session_state.current_tab = "Image Analysis"
+                                # Use st.experimental_rerun() to maintain tab state
+                                st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
 
+        # Display selected image if one is selected
         if st.session_state.selected_img_index is not None:
             st.divider()
             st.subheader(f"Selected Image {st.session_state.selected_img_index+1}")
@@ -358,6 +366,27 @@ with tab2:
             st.image(selected_img, caption=f"Selected Image {st.session_state.selected_img_index+1}")
     else:
         st.write("No images found in the document.")
+
+# Add JavaScript to maintain tab selection
+st.markdown(
+    """
+    <script>
+    // Store tab selection when page reloads
+    document.addEventListener('DOMContentLoaded', function() {
+        if(window.location.hash) {
+            const tabName = window.location.hash.substring(1);
+            const tabs = document.querySelectorAll('button[role="tab"]');
+            tabs.forEach(tab => {
+                if(tab.innerText === tabName) {
+                    tab.click();
+                }
+            });
+        }
+    });
+    </script>
+    """,
+    unsafe_allow_html=True
+)
 
 # ... (keep the rest of the code the same)
 # General Chat Tab
