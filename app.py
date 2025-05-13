@@ -286,6 +286,7 @@ with tab1:
     render_chat(text_chat_container, st.session_state.text_chat_history)
 
 # Image Analysis Tab
+# Image Analysis Tab
 with tab2:
     st.subheader("Image Analysis")
     
@@ -316,7 +317,10 @@ with tab2:
         if st.session_state.selected_img:
             st.divider()
             st.subheader("Analyzing Selected Image")
-            st.image(st.session_state.selected_img, caption="Selected Image", use_container_width=True)
+
+            selected_img = Image.open(st.session_state.selected_img)
+            selected_img.thumbnail((300, 300))  # Resize selected image to be smaller
+            st.image(selected_img, caption="Selected Image")
 
             image_chat_container = st.container()
             user_image_input = st.text_input(
