@@ -198,18 +198,16 @@ if uploaded_file:
                 st.image(img_path, caption=f"Image {i + 1}", use_container_width=True)
 
     selected_img = None
-    for img_path in image_paths:
-        if st.button(f"Ask based on {Path(img_path).name}"):
+    for i, img_path in enumerate(image_paths):
+        if st.button(f"Ask based on Image {i + 1}"):
             selected_img = img_path
+            st.image(selected_img, caption=f"Selected Image {i + 1}", use_container_width=True)
 
-    if question:
-        if selected_img:
-            st.image(selected_img, caption="Selected Image", use_container_width=True)
-            answer = ask_gemini(question, selected_img)
-            st.success("Answer:")
-            st.write(answer)
-        else:
-            st.warning("Please click a button to select an image.")
+    if selected_img and question:
+        st.write("Asking the model...")
+        answer = ask_gemini(question, selected_img)
+        st.success("Answer:")
+        st.write(answer)
 
     st.subheader("Full Extracted Text")
     st.text_area("Text", text, height=300)
