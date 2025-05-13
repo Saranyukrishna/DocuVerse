@@ -254,61 +254,14 @@ with tab1:
 with tab2:
     st.subheader("Image Analysis")
     
-    # Input section at the top
-    input_col, img_col = st.columns([3, 1])
-    
-    with input_col:
-        st.write("**Image Analysis Input**")
-        user_image_input = st.text_input(
-            "Ask about the image:", 
-            key="image_input", 
-            placeholder="Type your question here... (Select an image first)",
-            label_visibility="collapsed",
-            disabled=not st.session_state.selected_img
-        )
-        image_send_button = st.button("Send", key="image_send", disabled=not st.session_state.selected_img)
-    
-    with img_col:
-        if st.session_state.selected_img:
-            try:
-                selected_img = Image.open(st.session_state.selected_img)
-                selected_img.thumbnail((150, 150))  # Reduced size
-                st.image(selected_img, caption="Selected Image", use_container_width=True)
-            except Exception as e:
-                st.error(f"Error loading selected image: {str(e)}")
-        else:
-            st.info("No image selected")
-
-    # Chat history appears right below input section
-    if st.session_state.selected_img:
-        image_chat_container = st.container()
-        
-        if image_send_button and user_image_input:
-            st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
-            if user_image_input.lower() == 'close the chat':
-                st.stop()
-            
-            with st.spinner("Analyzing image..."):
-                answer = ask_gemini(
-                    user_image_input, 
-                    img_path=st.session_state.selected_img, 
-                    context=st.session_state.text
-                )
-                st.session_state.image_chat_history.append(AIMessage(content=answer))
-                st.session_state.scroll = True
-                st.rerun()
-        
-        render_chat(image_chat_container, st.session_state.image_chat_history)
-
-    # Image selection grid appears below chat
+    # Image selection section
     if st.session_state.processed and st.session_state.image_paths:
-        st.divider()
         st.write("Select an image to analyze:")
-        num_cols = 4  # More columns to fit more images
+        num_cols = 4
         image_paths = st.session_state.image_paths
         rows = (len(image_paths) + num_cols - 1) // num_cols
         
-        # Smaller image grid
+        # Compact image grid
         for row in range(rows):
             cols = st.columns(num_cols)
             for col_idx in range(num_cols):
@@ -318,15 +271,71 @@ with tab2:
                     with cols[col_idx]:
                         try:
                             img = Image.open(img_path)
-                            img.thumbnail((120, 120))  # Reduced size
+                            img.thumbnail((120, 120))
                             st.image(img, use_container_width=True)
-                            if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):  # Shorter button text
+                            if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):
                                 st.session_state.selected_img = img_path
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
     else:
         st.write("No images found in the document.")
+    
+    # Chat interface (similar to General Chat tab)
+    if st.session_state.selected_img:
+        st.divider()
+        
+        # Chat container with fixed height and border
+        image_chat_container = st.container(height=400, border=True)
+        
+        # Display chat history
+        with image_chat_container:
+            for message in st.session_state.image_chat_history:
+                if isinstance(message, HumanMessage):
+                    st.markdown(
+                        f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
+                        unsafe_allow_html=True
+                    )
+                elif isinstance(message, AIMessage):
+                    st.markdown(
+                        f"<div style='text-align: left; color: black; background-color: #f0f0f0; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
+                        unsafe_allow_html=True
+                    )
+        
+        # Input row with text box and image preview
+        input_col, preview_col = st.columns([3, 1])
+        
+        with input_col:
+            user_image_input = st.text_input(
+                "Ask about the image:", 
+                key="image_input", 
+                placeholder="Type your question here...",
+                label_visibility="collapsed"
+            )
+            image_send_button = st.button("Send", key="image_send")
+        
+        with preview_col:
+            try:
+                selected_img = Image.open(st.session_state.selected_img)
+                selected_img.thumbnail((150, 150))
+                st.image(selected_img, caption="Selected Image", use_container_width=True)
+            except Exception as e:
+                st.error(f"Error loading image: {str(e)}")
+        
+        # Handle message sending
+        if image_send_button and user_image_input:
+            st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
+            
+            with st.spinner("Analyzing image..."):
+                answer = ask_gemini(
+                    user_image_input, 
+                    img_path=st.session_state.selected_img,
+                    context=st.session_state.text
+                )
+                st.session_state.image_chat_history.append(AIMessage(content=answer))
+                st.rerun()
+    else:
+        st.info("Please select an image to begin analysis.")
 
 # general chat
 with tab3:
