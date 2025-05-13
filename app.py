@@ -286,11 +286,41 @@ with tab1:
     render_chat(text_chat_container, st.session_state.text_chat_history)
 
 # Image Analysis Tab
+# ... (keep all the imports and initial setup code the same until the Image Analysis Tab)
+
 # Image Analysis Tab
 with tab2:
     st.subheader("Image Analysis")
     
+    # Chat interface at the top
+    image_chat_container = st.container()
+    
     if st.session_state.processed and st.session_state.image_paths:
+        # Input box at the top
+        user_image_input = st.text_input(
+            "Ask about the image:", 
+            key="image_input",
+            placeholder="Type your question here...",
+            label_visibility="collapsed"
+        )
+        image_send_button = st.button("Send", key="image_send")
+
+        if image_send_button and user_image_input:
+            st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
+            if user_image_input.lower() == 'close the chat':
+                st.stop()
+            with st.spinner("Analyzing image..."):
+                if st.session_state.selected_img_index is not None:
+                    answer = ask_gemini(user_image_input, img_path=st.session_state.selected_img, context=st.session_state.text)
+                else:
+                    answer = "Please select an image first before asking questions."
+                st.session_state.image_chat_history.append(AIMessage(content=answer))
+                st.session_state.scroll = True
+                st.rerun()
+
+        render_chat(image_chat_container, st.session_state.image_chat_history)
+        
+        # Image selection below
         st.write("Select an image to analyze:")
         
         # Use session state to track selected image
@@ -312,48 +342,24 @@ with tab2:
                             img = Image.open(img_path)
                             img.thumbnail((200, 200))
                             st.image(img, use_container_width=True)
-                            if st.button(f"Analyze Image {img_idx+1}", key=f"btn_{img_idx}"):
+                            if st.button(f"Select Image {img_idx+1}", key=f"btn_{img_idx}"):
                                 st.session_state.selected_img_index = img_idx
                                 st.session_state.selected_img = img_path
-                                # Force a rerun to update the UI
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
 
         if st.session_state.selected_img_index is not None:
             st.divider()
-            st.subheader("Analyzing Selected Image")
+            st.subheader(f"Selected Image {st.session_state.selected_img_index+1}")
 
             selected_img = Image.open(st.session_state.selected_img)
             selected_img.thumbnail((300, 300))
             st.image(selected_img, caption=f"Selected Image {st.session_state.selected_img_index+1}")
-
-            image_chat_container = st.container()
-            user_image_input = st.text_input(
-                "Ask about the image:", 
-                key="image_input",
-                placeholder="Type your question here...",
-                label_visibility="collapsed"
-            )
-            image_send_button = st.button("Send", key="image_send")
-
-            if image_send_button and user_image_input:
-                st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
-                if user_image_input.lower() == 'close the chat':
-                    st.stop()
-                with st.spinner("Analyzing image..."):
-                    answer = ask_gemini(user_image_input, img_path=st.session_state.selected_img, context=st.session_state.text)
-                    st.session_state.image_chat_history.append(AIMessage(content=answer))
-                    st.session_state.scroll = True
-                    st.rerun()
-
-            render_chat(image_chat_container, st.session_state.image_chat_history)
-        else:
-            st.info("Please select an image to begin analysis.")
     else:
         st.write("No images found in the document.")
 
-
+# ... (keep the rest of the code the same)
 # General Chat Tab
 with tab3:
     st.subheader("General Chat")
