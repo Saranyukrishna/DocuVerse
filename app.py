@@ -293,7 +293,10 @@ with tab2:
     if st.session_state.processed and st.session_state.image_paths:
         st.write("Select an image to analyze:")
         
-        selected_img_index = None
+        # Use session state to track selected image
+        if 'selected_img_index' not in st.session_state:
+            st.session_state.selected_img_index = None
+        
         num_cols = 3
         image_paths = st.session_state.image_paths
         rows = (len(image_paths) + num_cols - 1) // num_cols
@@ -310,17 +313,20 @@ with tab2:
                             img.thumbnail((200, 200))
                             st.image(img, use_container_width=True)
                             if st.button(f"Analyze Image {img_idx+1}", key=f"btn_{img_idx}"):
+                                st.session_state.selected_img_index = img_idx
                                 st.session_state.selected_img = img_path
+                                # Force a rerun to update the UI
+                                st.rerun()
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
 
-        if st.session_state.selected_img:
+        if st.session_state.selected_img_index is not None:
             st.divider()
             st.subheader("Analyzing Selected Image")
 
             selected_img = Image.open(st.session_state.selected_img)
-            selected_img.thumbnail((300, 300))  # Resize selected image to be smaller
-            st.image(selected_img, caption="Selected Image")
+            selected_img.thumbnail((300, 300))
+            st.image(selected_img, caption=f"Selected Image {st.session_state.selected_img_index+1}")
 
             image_chat_container = st.container()
             user_image_input = st.text_input(
