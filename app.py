@@ -286,12 +286,31 @@ with tab1:
     render_chat(text_chat_container, st.session_state.text_chat_history)
 
 # Image Analysis Tab
-# ... (keep all the imports and initial setup code the same until the Image Analysis Tab)
-
-# Image Analysis Tab
-# Image Analysis Tab
 with tab2:
     st.subheader("Image Analysis")
+    
+    # Initialize tab state if not exists
+    if 'current_tab' not in st.session_state:
+        st.session_state.current_tab = "Image Analysis"
+    
+    # Force stay on this tab if coming from image selection
+    if st.session_state.current_tab == "Image Analysis":
+        st.markdown(
+            f"""
+            <script>
+                // Immediately switch to our tab when page loads
+                window.onload = function() {{
+                    const tabs = parent.document.querySelectorAll('button[role="tab"]');
+                    tabs.forEach(tab => {{
+                        if(tab.innerText.includes('Image Analysis')) {{
+                            tab.click();
+                        }}
+                    }});
+                }};
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
     
     # Chat interface at the top
     image_chat_container = st.container()
@@ -317,7 +336,7 @@ with tab2:
                     answer = "Please select an image first before asking questions."
                 st.session_state.image_chat_history.append(AIMessage(content=answer))
                 st.session_state.scroll = True
-                st.rerun()
+                st.experimental_rerun()
 
         render_chat(image_chat_container, st.session_state.image_chat_history)
         
@@ -332,10 +351,6 @@ with tab2:
         image_paths = st.session_state.image_paths
         rows = (len(image_paths) + num_cols - 1) // num_cols
 
-        # Store current tab in session state
-        if 'current_tab' not in st.session_state:
-            st.session_state.current_tab = "Image Analysis"
-
         for row in range(rows):
             cols = st.columns(num_cols)
             for col_idx in range(num_cols):
@@ -346,47 +361,33 @@ with tab2:
                         try:
                             img = Image.open(img_path)
                             img.thumbnail((200, 200))
-                            st.image(img, use_column_width=True)
-                            if st.button(f"Select Image {img_idx+1}", key=f"img_btn_{img_idx}"):
-                                st.session_state.selected_img_index = img_idx
-                                st.session_state.selected_img = img_path
-                                st.session_state.current_tab = "Image Analysis"
-                                # Use st.experimental_rerun() to maintain tab state
-                                st.experimental_rerun()
+                            st.image(img, use_container_width=True)
+                            if st.button(f"Select Image {img_idx+1}", 
+                                       key=f"img_btn_{img_idx}",
+                                       on_click=lambda idx=img_idx: set_image_selection(idx)):
+                                pass
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
 
-        # Display selected image if one is selected
         if st.session_state.selected_img_index is not None:
             st.divider()
             st.subheader(f"Selected Image {st.session_state.selected_img_index+1}")
 
             selected_img = Image.open(st.session_state.selected_img)
             selected_img.thumbnail((300, 300))
-            st.image(selected_img, caption=f"Selected Image {st.session_state.selected_img_index+1}")
+            st.image(selected_img, 
+                    caption=f"Selected Image {st.session_state.selected_img_index+1}",
+                    use_container_width=True)
     else:
         st.write("No images found in the document.")
 
-# Add JavaScript to maintain tab selection
-st.markdown(
-    """
-    <script>
-    // Store tab selection when page reloads
-    document.addEventListener('DOMContentLoaded', function() {
-        if(window.location.hash) {
-            const tabName = window.location.hash.substring(1);
-            const tabs = document.querySelectorAll('button[role="tab"]');
-            tabs.forEach(tab => {
-                if(tab.innerText === tabName) {
-                    tab.click();
-                }
-            });
-        }
-    });
-    </script>
-    """,
-    unsafe_allow_html=True
-)
+# Add this callback function outside the tab definition
+def set_image_selection(idx):
+    st.session_state.selected_img_index = idx
+    st.session_state.selected_img = st.session_state.image_paths[idx]
+    st.session_state.current_tab = "Image Analysis"
+
+# Image Analysis Tab
 
 # ... (keep the rest of the code the same)
 # General Chat Tab
