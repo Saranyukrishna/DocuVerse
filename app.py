@@ -4,31 +4,50 @@ from docx import Document
 from pptx import Presentation
 from PIL import Image
 import io
+import os
 import time
+from pathlib import Path
 
-def extract_text_images_pdf(file):
+OUTPUT_DIR = Path("output")
+IMAGES_DIR = OUTPUT_DIR / "images"
+TEXT_FILE = OUTPUT_DIR / "extracted_text.txt"
+
+def save_text(text):
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    with open(TEXT_FILE, "w", encoding="utf-8") as f:
+        f.write(text)
+
+def save_image(image_pil, image_count):
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    image_path = IMAGES_DIR / f"image_{image_count}.png"
+    image_pil.save(image_path)
+    return str(image_path)
+
+def extract_pdf(file):
     text = ""
-    images = []
-
+    image_paths = []
     pdf = fitz.open(stream=file.read(), filetype="pdf")
-    for page_num in range(len(pdf)):
-        page = pdf[page_num]
-        text += page.get_text()
+    image_count = 1
 
-        for img_index, img in enumerate(page.get_images(full=True)):
+    for page in pdf:
+        text += page.get_text()
+        for img in page.get_images(full=True):
             xref = img[0]
             base_image = pdf.extract_image(xref)
-            image_bytes = base_image["image"]
-            img_pil = Image.open(io.BytesIO(image_bytes))
-            images.append((f"Page {page_num + 1} - Image {img_index + 1}", img_pil))
+            img_bytes = base_image["image"]
+            img_pil = Image.open(io.BytesIO(img_bytes))
+            img_path = save_image(img_pil, image_count)
+            image_paths.append(img_path)
+            image_count += 1
     pdf.close()
-    return text, images
+    return text, image_paths
 
-def extract_text_images_docx(file):
+def extract_docx(file):
     text = ""
-    images = []
-
+    image_paths = []
     doc = Document(file)
+    image_count = 1
+
     for para in doc.paragraphs:
         text += para.text + "\n"
 
@@ -37,14 +56,17 @@ def extract_text_images_docx(file):
         if "image" in rel_obj.target_ref:
             img_data = rel_obj.target_part.blob
             img_pil = Image.open(io.BytesIO(img_data))
-            images.append(("DOCX Image", img_pil))
-    return text, images
+            img_path = save_image(img_pil, image_count)
+            image_paths.append(img_path)
+            image_count += 1
+    return text, image_paths
 
-def extract_text_images_pptx(file):
+def extract_pptx(file):
     text = ""
-    images = []
-
+    image_paths = []
     prs = Presentation(file)
+    image_count = 1
+
     for i, slide in enumerate(prs.slides):
         for shape in slide.shapes:
             if hasattr(shape, "text"):
@@ -52,41 +74,54 @@ def extract_text_images_pptx(file):
             if shape.shape_type == 13:  # Picture
                 img_stream = shape.image.blob
                 img_pil = Image.open(io.BytesIO(img_stream))
-                images.append((f"Slide {i+1} Image", img_pil))
-    return text, images
+                img_path = save_image(img_pil, image_count)
+                image_paths.append(img_path)
+                image_count += 1
+    return text, image_paths
 
 def main():
-    st.title("Text & Image Extractor (PDF, DOCX, PPTX)")
+    st.title("Document Extractor: Text + Images + LLM Ready")
 
-    uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx", "pptx"])
+    uploaded_file = st.file_uploader("Upload PDF, DOCX, or PPTX", type=["pdf", "docx", "pptx"])
     if uploaded_file:
         start_time = time.time()
-        filetype = uploaded_file.name.split('.')[-1].lower()
+        file_ext = uploaded_file.name.split('.')[-1].lower()
 
-        if filetype == "pdf":
-            text, images = extract_text_images_pdf(uploaded_file)
-        elif filetype == "docx":
-            text, images = extract_text_images_docx(uploaded_file)
-        elif filetype == "pptx":
-            text, images = extract_text_images_pptx(uploaded_file)
+        # Clear previous data
+        if OUTPUT_DIR.exists():
+            for f in OUTPUT_DIR.glob("*"):
+                if f.is_file():
+                    f.unlink()
+            if IMAGES_DIR.exists():
+                for img in IMAGES_DIR.glob("*"):
+                    img.unlink()
+
+        if file_ext == "pdf":
+            text, image_paths = extract_pdf(uploaded_file)
+        elif file_ext == "docx":
+            text, image_paths = extract_docx(uploaded_file)
+        elif file_ext == "pptx":
+            text, image_paths = extract_pptx(uploaded_file)
         else:
-            st.error("Unsupported file format.")
+            st.error("Unsupported file type.")
             return
 
-        st.subheader("Extracted Text")
-        if text.strip():
-            st.text_area("Text", text, height=400)
-        else:
-            st.info("No text found.")
+        save_text(text)
 
-        st.subheader("Extracted Images")
-        if images:
-            for caption, img in images:
-                st.image(img, caption=caption, use_column_width=True)
-        else:
-            st.info("No images found.")
+        st.success(f"Text and {len(image_paths)} image(s) saved in 'output/'")
+        st.text_area("Extracted Text", text, height=300)
 
-        st.success(f"Done in {time.time() - start_time:.2f} seconds.")
+        for img_path in image_paths:
+            st.image(img_path, caption=img_path, use_column_width=True)
+
+        st.markdown(f"**Text File:** `{TEXT_FILE}`")
+        st.markdown(f"**Image Directory:** `{IMAGES_DIR}`")
+
+        st.success(f"Extraction done in {time.time() - start_time:.2f} seconds")
+
+        if st.button("Pass to LLM"):
+            st.info("Text and image paths are ready to be passed to your LLM.")
+            st.code(f"with open('{TEXT_FILE}') as f: content = f.read()\n# image_paths = {image_paths}", language="python")
 
 if __name__ == "__main__":
     main()
