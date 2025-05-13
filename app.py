@@ -286,6 +286,7 @@ with tab1:
     render_chat(text_chat_container, st.session_state.text_chat_history)
 
 # Image Analysis Tab
+# Image Analysis Tab
 with tab2:
     st.subheader("Image Analysis")
     
@@ -316,14 +317,27 @@ with tab2:
     image_chat_container = st.container()
     
     if st.session_state.processed and st.session_state.image_paths:
-        # Input box at the top
-        user_image_input = st.text_input(
-            "Ask about the image:", 
-            key="image_input",
-            placeholder="Type your question here...",
-            label_visibility="collapsed"
-        )
-        image_send_button = st.button("Send", key="image_send")
+        # Create columns for image display and input
+        col1, col2 = st.columns([3, 1])  # Adjust ratio as needed
+        
+        with col1:
+            # Input box at the top
+            user_image_input = st.text_input(
+                "Ask about the image:", 
+                key="image_input",
+                placeholder="Type your question here...",
+                label_visibility="collapsed"
+            )
+            image_send_button = st.button("Send", key="image_send")
+
+        # Display selected image in the right column if available
+        if st.session_state.selected_img_index is not None:
+            with col2:
+                selected_img = Image.open(st.session_state.selected_img)
+                selected_img.thumbnail((150, 150))  # Smaller thumbnail for sidebar
+                st.image(selected_img, 
+                        caption=f"Selected Image {st.session_state.selected_img_index+1}",
+                        use_container_width=True)
 
         if image_send_button and user_image_input:
             st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
@@ -361,23 +375,13 @@ with tab2:
                         try:
                             img = Image.open(img_path)
                             img.thumbnail((200, 200))
-                            st.image(img, use_container_width=True)
+                            st.image(img, use_column_width=True)
                             if st.button(f"Select Image {img_idx+1}", 
                                        key=f"img_btn_{img_idx}",
                                        on_click=lambda idx=img_idx: set_image_selection(idx)):
                                 pass
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
-
-        if st.session_state.selected_img_index is not None:
-            st.divider()
-            st.subheader(f"Selected Image {st.session_state.selected_img_index+1}")
-
-            selected_img = Image.open(st.session_state.selected_img)
-            selected_img.thumbnail((300, 300))
-            st.image(selected_img, 
-                    caption=f"Selected Image {st.session_state.selected_img_index+1}",
-                    use_container_width=True)
     else:
         st.write("No images found in the document.")
 
@@ -386,8 +390,6 @@ def set_image_selection(idx):
     st.session_state.selected_img_index = idx
     st.session_state.selected_img = st.session_state.image_paths[idx]
     st.session_state.current_tab = "Image Analysis"
-
-# Image Analysis Tab
 
 # ... (keep the rest of the code the same)
 # General Chat Tab
