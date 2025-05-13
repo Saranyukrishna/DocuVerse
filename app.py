@@ -131,7 +131,7 @@ def extract_pptx(file):
             for shape in slide.shapes:
                 if hasattr(shape, "text"):
                     text += shape.text + "\n"
-                if shape.shape_type == 13:
+                if shape.shape_type == 13:  # 13 = picture
                     img_stream = shape.image.blob
                     img_pil = Image.open(io.BytesIO(img_stream))
                     img_path = save_image(img_pil, image_count)
@@ -191,32 +191,48 @@ if 'processed' not in st.session_state:
     st.session_state.text = ""
     st.session_state.image_paths = []
     st.session_state.selected_img = None
+if 'prev_uploaded_file' not in st.session_state:
+    st.session_state.prev_uploaded_file = None
 
-# File upload
+# File upload with reset logic
 with st.expander("Upload Document", expanded=True):
-    uploaded_file = st.file_uploader("Choose a file", type=SUPPORTED_TYPES)
+    uploaded_file = st.file_uploader("Choose a file", type=SUPPORTED_TYPES, key="file_uploader")
 
-if uploaded_file and not st.session_state.processed:
-    with st.spinner("Extracting content from document..."):
-        file_ext = uploaded_file.name.split(".")[-1].lower()
-        try:
-            if file_ext == "pdf":
-                st.session_state.text, st.session_state.image_paths = extract_pdf(uploaded_file)
-            elif file_ext == "docx":
-                st.session_state.text, st.session_state.image_paths = extract_docx(uploaded_file)
-            elif file_ext == "pptx":
-                st.session_state.text, st.session_state.image_paths = extract_pptx(uploaded_file)
-            OUTPUT_DIR.mkdir(exist_ok=True)
-            with open(TEXT_FILE, "w", encoding="utf-8") as f:
-                f.write(st.session_state.text)
-            st.session_state.processed = True
-            st.success("Document processed successfully!")
-        except Exception as e:
-            st.error(f"Failed to process document: {str(e)}")
-            cleanup()
-
-# Tabs
-tab1, tab2, tab3 = st.tabs(["📝 Text Analysis", "🖼️ Image Analysis", "💬 General Chat"])
+# Reset state when a new file is uploaded
+if uploaded_file != st.session_state.prev_uploaded_file:
+    # Clear previous content
+    st.session_state.processed = False
+    st.session_state.text = ""
+    st.session_state.image_paths = []
+    st.session_state.selected_img = None
+    st.session_state.text_chat_history = []
+    st.session_state.image_chat_history = []
+    
+    # Clean up previous temporary files
+    cleanup()
+    
+    # Process new file
+    if uploaded_file:
+        with st.spinner("Extracting content from document..."):
+            file_ext = uploaded_file.name.split(".")[-1].lower()
+            try:
+                if file_ext == "pdf":
+                    st.session_state.text, st.session_state.image_paths = extract_pdf(uploaded_file)
+                elif file_ext == "docx":
+                    st.session_state.text, st.session_state.image_paths = extract_docx(uploaded_file)
+                elif file_ext == "pptx":
+                    st.session_state.text, st.session_state.image_paths = extract_pptx(uploaded_file)
+                
+                OUTPUT_DIR.mkdir(exist_ok=True)
+                with open(TEXT_FILE, "w", encoding="utf-8") as f:
+                    f.write(st.session_state.text)
+                
+                st.session_state.processed = True
+                st.session_state.prev_uploaded_file = uploaded_file
+                st.success("Document processed successfully!")
+            except Exception as e:
+                st.error(f"Failed to process document: {str(e)}")
+                cleanup()
 
 def render_chat(container, chat_history):
     with container:
@@ -231,6 +247,9 @@ def render_chat(container, chat_history):
                     f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
                     unsafe_allow_html=True
                 )
+
+# Tabs
+tab1, tab2, tab3 = st.tabs(["📝 Text Analysis", "🖼️ Image Analysis", "💬 General Chat"])
 
 with tab1:
     st.subheader("Text Analysis")
@@ -250,7 +269,7 @@ with tab1:
             st.session_state.scroll = True
             st.rerun()
     render_chat(text_chat_container, st.session_state.text_chat_history)
-#image analysis
+
 with tab2:
     st.subheader("Image Analysis")
     
@@ -267,7 +286,7 @@ with tab2:
         else:
             st.info("No image selected")
 
-    # Chat history container (now placed above the input)
+    # Chat history container
     if st.session_state.selected_img:
         image_chat_container = st.container()
         
@@ -285,7 +304,7 @@ with tab2:
                         unsafe_allow_html=True
                     )
 
-        # Input section at the bottom (after chat history)
+        # Input section at the bottom
         input_col = st.container()
         with input_col:
             st.write("**Ask about the image**")
@@ -340,8 +359,8 @@ with tab2:
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
     else:
-        st.write("No images found in the document.") 
-# general chat
+        st.write("No images found in the document.")
+
 with tab3:
     st.subheader("General Chat")
     general_chat_container = st.container()
@@ -365,5 +384,5 @@ if st.session_state.scroll:
         unsafe_allow_html=True
     )
 
-# Expose cleanup
+# Cleanup on app exit
 st.session_state.cleanup = cleanup
