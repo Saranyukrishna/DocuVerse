@@ -10,7 +10,7 @@ from pathlib import Path
 import base64
 import numpy as np
 import cohere
-from google import genai
+import google.generativeai as genai 
 from dotenv import load_dotenv
 
 load_dotenv()
