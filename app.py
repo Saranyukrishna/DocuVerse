@@ -1,4 +1,5 @@
-import streamlit as st
+
+    import streamlit as st
 import fitz  # PyMuPDF
 from docx import Document
 from pptx import Presentation
@@ -144,16 +145,31 @@ def extract_pptx(file):
         st.error(f"Error processing PPTX: {str(e)}")
     return text, image_paths
 
-def ask_gemini(question, img_path):
-    """Query Gemini about an image"""
+def ask_gemini(question, context=None, img_path=None):
+    """Query Gemini with optional context and/or image"""
     try:
         model = genai.GenerativeModel(GEMINI_MODEL)
-        prompt = f"""Answer the question based on the following image.
-Be concise but provide enough context for your answer.
-Question: {question}"""
         
-        img = Image.open(img_path)
-        response = model.generate_content([prompt, img])
+        if img_path and context:
+            # Both image and text context
+            prompt = f"""Answer the question based on the following image and additional context.
+Context: {context}
+Question: {question}"""
+            img = Image.open(img_path)
+            response = model.generate_content([prompt, img])
+        elif img_path:
+            # Image only
+            prompt = f"""Answer the question based on the following image.
+Question: {question}"""
+            img = Image.open(img_path)
+            response = model.generate_content([prompt, img])
+        else:
+            # Text only
+            prompt = f"""Answer the question based on the following context.
+Context: {context}
+Question: {question}"""
+            response = model.generate_content(prompt)
+            
         return response.text
     except Exception as e:
         return f"Error querying Gemini: {str(e)}"
@@ -176,6 +192,7 @@ if 'processed' not in st.session_state:
     st.session_state.text = ""
     st.session_state.image_paths = []
     st.session_state.selected_img = None
+    st.session_state.active_tab = "text"  # Track which tab is active
 
 # Process file when uploaded
 if uploaded_file and not st.session_state.processed:
@@ -203,41 +220,30 @@ if uploaded_file and not st.session_state.processed:
 
 # Show extracted content
 if st.session_state.processed:
-    # Display images in a grid
-    if st.session_state.image_paths:
-        st.subheader("📸 Extracted Images")
-        cols = st.columns(4)
-        for i, img_path in enumerate(st.session_state.image_paths):
-            with cols[i % 4]:
-                st.image(img_path, caption=f"Image {i+1}", use_container_width=True)  # Updated parameter
-                if st.button(f"Select Image {i+1}", key=f"select_{i}"):
-                    st.session_state.selected_img = img_path
+    # Create tabs for text and image analysis
+    tab1, tab2 = st.tabs(["📝 Text Analysis", "🖼️ Image Analysis"])
     
-    # Show selected image
-    if st.session_state.selected_img:
-        st.subheader("🔍 Selected Image")
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            st.image(st.session_state.selected_img, use_container_width=True)  # Updated parameter
-        with col2:
-            question = st.text_input("Ask a question about this image")
-            if question:
+    with tab1:
+        st.subheader("Text Analysis")
+        st.text_area("Extracted Text", st.session_state.text, height=200)
+        
+        text_question = st.text_input("Ask a question about the text content")
+        if text_question:
+            with st.spinner("Analyzing text..."):
+                answer = ask_gemini(text_question, context=st.session_state.text)
+                st.write("Answer:", answer)
+
+    with tab2:
+        st.subheader("Image Analysis")
+        if st.session_state.image_paths:
+            selected_image = st.selectbox("Select an image to analyze", st.session_state.image_paths)
+            st.image(selected_image, caption="Selected Image", use_column_width=True)
+
+            image_question = st.text_input("Ask a question about the image")
+            if image_question:
                 with st.spinner("Analyzing image..."):
-                    answer = ask_gemini(question, st.session_state.selected_img)
-                    if "Error querying Gemini" in answer:
-                        st.error(answer)
-                    else:
-                        st.markdown(f"**Answer:** {answer}")
-    
-    # Show extracted text
-    st.subheader("📝 Extracted Text")
-    st.text_area("Full Text", st.session_state.text, height=300)
+                    answer = ask_gemini(image_question, img_path=selected_image)
+                    st.write("Answer:", answer)
+        else:
+            st.write("No images found in the document.")
 
-# Cleanup when done
-if st.button("Clear Session"):
-    cleanup()
-    st.session_state.clear()
-    st.rerun()
-
-import atexit
-atexit.register(cleanup)
