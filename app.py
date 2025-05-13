@@ -151,23 +151,32 @@ def ask_gemini(question, context=None, img_path=None):
         
         if img_path and context:
             # Both image and text context
-            prompt = f"""Answer the question based on the following image and additional context.
+            prompt = f"""Answer the question based on the following image and additional context if relevant.
+If the question is general and not related to the context, answer it generally.
+
 Context: {context}
 Question: {question}"""
             img = Image.open(img_path)
             response = model.generate_content([prompt, img])
         elif img_path:
             # Image only
-            prompt = f"""Answer the question based on the following image.
+            prompt = f"""Answer the question based on the following image if relevant.
+If the question is general and not about the image, answer it generally.
+
 Question: {question}"""
             img = Image.open(img_path)
             response = model.generate_content([prompt, img])
-        else:
-            # Text only
-            prompt = f"""Answer the question based on the following context.
+        elif context:
+            # Text context only
+            prompt = f"""Answer the question based on the following context if relevant.
+If the question is general and not related to the context, answer it generally.
+
 Context: {context}
 Question: {question}"""
             response = model.generate_content(prompt)
+        else:
+            # No context - general question
+            response = model.generate_content(question)
             
         return response.text
     except Exception as e:
@@ -220,7 +229,7 @@ if uploaded_file and not st.session_state.processed:
 # Show extracted content
 if st.session_state.processed:
     # Create tabs for text and image analysis
-    tab1, tab2 = st.tabs(["📝 Text Analysis", "🖼️ Image Analysis"])
+    tab1, tab2, tab3 = st.tabs(["📝 Text Analysis", "🖼️ Image Analysis", "💬 General Chat"])
     
     with tab1:
         st.subheader("Text Analysis")
@@ -241,8 +250,27 @@ if st.session_state.processed:
             image_question = st.text_input("Ask a question about the image")
             if image_question:
                 with st.spinner("Analyzing image..."):
-                    answer = ask_gemini(image_question, img_path=selected_image)
+                    answer = ask_gemini(image_question, img_path=selected_image, context=st.session_state.text)
                     st.write("Answer:", answer)
         else:
             st.write("No images found in the document.")
+    
+    with tab3:
+        st.subheader("General Chat")
+        general_question = st.text_input("Ask any general question")
+        if general_question:
+            with st.spinner("Thinking..."):
+                answer = ask_gemini(general_question)
+                st.write("Answer:", answer)
 
+else:
+    # If no document is uploaded, show general chat interface
+    st.subheader("General Chat")
+    general_question = st.text_input("Ask any question")
+    if general_question:
+        with st.spinner("Thinking..."):
+            answer = ask_gemini(general_question)
+            st.write("Answer:", answer)
+
+# Clean up when done
+st.session_state.cleanup = cleanup
