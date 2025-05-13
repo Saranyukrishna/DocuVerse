@@ -254,9 +254,34 @@ with tab1:
 with tab2:
     st.subheader("Image Analysis")
     
+    # Always show the input box at the top
+    input_col, img_col = st.columns([3, 1])
+    
+    with input_col:
+        st.write("**Image Analysis Input**")
+        user_image_input = st.text_input(
+            "Ask about the image:", 
+            key="image_input", 
+            placeholder="Type your question here... (Select an image first)",
+            label_visibility="collapsed",
+            disabled=not st.session_state.selected_img
+        )
+        image_send_button = st.button("Send", key="image_send", disabled=not st.session_state.selected_img)
+    
+    with img_col:
+        if st.session_state.selected_img:
+            try:
+                selected_img = Image.open(st.session_state.selected_img)
+                selected_img.thumbnail((250, 250))
+                st.image(selected_img, caption="Selected Image", use_container_width=True)
+            except Exception as e:
+                st.error(f"Error loading selected image: {str(e)}")
+        else:
+            st.info("No image selected")
+
     if st.session_state.processed and st.session_state.image_paths:
+        st.divider()
         st.write("Select an image to analyze:")
-        selected_img_index = None
         num_cols = 3
         image_paths = st.session_state.image_paths
         rows = (len(image_paths) + num_cols - 1) // num_cols
@@ -273,35 +298,14 @@ with tab2:
                             img = Image.open(img_path)
                             img.thumbnail((200, 200))
                             st.image(img, use_container_width=True)
-                            if st.button(f"Analyze Image {img_idx+1}", key=f"btn_{img_idx}"):
+                            if st.button(f"Select Image {img_idx+1}", key=f"btn_{img_idx}"):
                                 st.session_state.selected_img = img_path
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
         
-        # Chat interface (only shown when image is selected)
+        # Chat history container
         if st.session_state.selected_img:
-            # Input row with text box and image side by side
-            input_col, img_col = st.columns([3, 1])
-            
-            with input_col:
-                user_image_input = st.text_input(
-                    "Ask about the image:", 
-                    key="image_input", 
-                    placeholder="Type your question here...",
-                    label_visibility="collapsed"
-                )
-                image_send_button = st.button("Send", key="image_send")
-            
-            with img_col:
-                try:
-                    selected_img = Image.open(st.session_state.selected_img)
-                    selected_img.thumbnail((250, 250))
-                    st.image(selected_img, caption="Selected Image", use_container_width=True)
-                except Exception as e:
-                    st.error(f"Error loading selected image: {str(e)}")
-            
-            # Chat history container below
             image_chat_container = st.container()
             
             if image_send_button and user_image_input:
@@ -320,11 +324,8 @@ with tab2:
                     st.rerun()
             
             render_chat(image_chat_container, st.session_state.image_chat_history)
-        else:
-            st.info("Please select an image to begin analysis.")
     else:
         st.write("No images found in the document.")
-
 with tab3:
     st.subheader("General Chat")
     general_chat_container = st.container()
