@@ -293,15 +293,29 @@ with tab1:
 with tab2:
     st.subheader("Image Analysis")
 
-    image_chat_container = st.container()
+    # Create two columns: one for chat input, one for selected image
+    input_col, preview_col = st.columns([2, 1])
 
-    # Chat input box always visible
-    user_image_input = st.text_input(
-        "Ask about the image:",
-        key="image_input",
-        placeholder="Type your question here..."
-    )
-    image_send_button = st.button("Send", key="image_send")
+    with input_col:
+        user_image_input = st.text_input(
+            "Ask about the image:",
+            key="image_input",
+            placeholder="Type your question here..."
+        )
+        image_send_button = st.button("Send", key="image_send")
+
+    with preview_col:
+        if st.session_state.selected_img is not None:
+            try:
+                selected_img = Image.open(st.session_state.selected_img)
+                selected_img.thumbnail((250, 250))
+                st.image(selected_img, caption="Selected Image", use_container_width=True)
+            except Exception as e:
+                st.error(f"Failed to load image: {e}")
+        else:
+            st.info("No image selected.")
+
+    image_chat_container = st.container()
 
     if image_send_button and user_image_input:
         st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
@@ -343,19 +357,8 @@ with tab2:
                                 st.session_state.selected_img = st.session_state.image_paths[img_idx]
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
-
-        # Show selected image preview
-        if st.session_state.selected_img_index is not None:
-            selected_img = Image.open(st.session_state.selected_img)
-            selected_img.thumbnail((200, 200))
-            st.image(
-                selected_img,
-                caption=f"Selected Image {st.session_state.selected_img_index + 1}",
-                use_container_width=True
-            )
     else:
         st.info("No images found in the uploaded document.")
-
 
 
 # General Chat Tab
