@@ -250,11 +250,11 @@ with tab1:
             st.session_state.scroll = True
             st.rerun()
     render_chat(text_chat_container, st.session_state.text_chat_history)
-
+#image analysis
 with tab2:
     st.subheader("Image Analysis")
     
-    # Always show the input box at the top
+    # Input section at the top
     input_col, img_col = st.columns([3, 1])
     
     with input_col:
@@ -272,21 +272,43 @@ with tab2:
         if st.session_state.selected_img:
             try:
                 selected_img = Image.open(st.session_state.selected_img)
-                selected_img.thumbnail((250, 250))
+                selected_img.thumbnail((150, 150))  # Reduced size
                 st.image(selected_img, caption="Selected Image", use_container_width=True)
             except Exception as e:
                 st.error(f"Error loading selected image: {str(e)}")
         else:
             st.info("No image selected")
 
+    # Chat history appears right below input section
+    if st.session_state.selected_img:
+        image_chat_container = st.container()
+        
+        if image_send_button and user_image_input:
+            st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
+            if user_image_input.lower() == 'close the chat':
+                st.stop()
+            
+            with st.spinner("Analyzing image..."):
+                answer = ask_gemini(
+                    user_image_input, 
+                    img_path=st.session_state.selected_img, 
+                    context=st.session_state.text
+                )
+                st.session_state.image_chat_history.append(AIMessage(content=answer))
+                st.session_state.scroll = True
+                st.rerun()
+        
+        render_chat(image_chat_container, st.session_state.image_chat_history)
+
+    # Image selection grid appears below chat
     if st.session_state.processed and st.session_state.image_paths:
         st.divider()
         st.write("Select an image to analyze:")
-        num_cols = 3
+        num_cols = 4  # More columns to fit more images
         image_paths = st.session_state.image_paths
         rows = (len(image_paths) + num_cols - 1) // num_cols
         
-        # Image selection grid
+        # Smaller image grid
         for row in range(rows):
             cols = st.columns(num_cols)
             for col_idx in range(num_cols):
@@ -296,36 +318,17 @@ with tab2:
                     with cols[col_idx]:
                         try:
                             img = Image.open(img_path)
-                            img.thumbnail((200, 200))
+                            img.thumbnail((120, 120))  # Reduced size
                             st.image(img, use_container_width=True)
-                            if st.button(f"Select Image {img_idx+1}", key=f"btn_{img_idx}"):
+                            if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):  # Shorter button text
                                 st.session_state.selected_img = img_path
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
-        
-        # Chat history container
-        if st.session_state.selected_img:
-            image_chat_container = st.container()
-            
-            if image_send_button and user_image_input:
-                st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
-                if user_image_input.lower() == 'close the chat':
-                    st.stop()
-                
-                with st.spinner("Analyzing image..."):
-                    answer = ask_gemini(
-                        user_image_input, 
-                        img_path=st.session_state.selected_img, 
-                        context=st.session_state.text
-                    )
-                    st.session_state.image_chat_history.append(AIMessage(content=answer))
-                    st.session_state.scroll = True
-                    st.rerun()
-            
-            render_chat(image_chat_container, st.session_state.image_chat_history)
     else:
         st.write("No images found in the document.")
+
+# general chat
 with tab3:
     st.subheader("General Chat")
     general_chat_container = st.container()
