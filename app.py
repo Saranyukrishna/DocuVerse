@@ -5,12 +5,11 @@ from pptx import Presentation
 from PIL import Image
 import io
 import os
-import time
 from pathlib import Path
 import base64
 import numpy as np
 import cohere
-import google.generativeai as genai 
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -145,6 +144,7 @@ def search_image(question, embeddings, image_paths):
     top_idx = np.argmax(scores)
     return image_paths[top_idx]
 
+
 def ask_gemini(question, img_path):
     model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""Answer the question based on the following image.
@@ -190,15 +190,21 @@ if uploaded_file:
     st.success("Extraction complete!")
     st.subheader("Extracted Images")
 
+    row_images = st.container()
+    with row_images:
+        cols = st.columns(5)
+        for i, img_path in enumerate(image_paths):
+            with cols[i % 5]:
+                st.image(img_path, caption=f"Image {i + 1}", use_container_width=True)
+
     selected_img = None
-    for i, img_path in enumerate(image_paths):
-        st.image(img_path, caption=f"Image {i + 1}", width=250)
-        if st.button(f"Ask based on Image {i + 1}"):
+    for img_path in image_paths:
+        if st.button(f"Ask based on {Path(img_path).name}"):
             selected_img = img_path
 
     if question:
         if selected_img:
-            st.image(selected_img, caption="Selected Image", use_column_width=True)
+            st.image(selected_img, caption="Selected Image", use_container_width=True)
             answer = ask_gemini(question, selected_img)
             st.success("Answer:")
             st.write(answer)
