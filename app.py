@@ -36,7 +36,7 @@ except Exception as e:
 # Configuration
 MAX_PIXELS = 1568 * 1568
 SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
-GROQ_MODEL = "mixtral-8x7b-32768"  # or "llama3-70b-8192"
+GROQ_MODEL = "llama3-70b-8192"  # or "llama3-70b-8192"
 
 # Create temporary directory
 OUTPUT_DIR = Path(tempfile.mkdtemp())
