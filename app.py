@@ -445,21 +445,59 @@ with tab3:
             st.rerun()
         
         with st.spinner("Thinking..."):
-            # Get search results if enabled
-            search_context = ""
-            if enable_search:
-                with st.spinner("Searching the web..."):
+            # First try to answer without search
+            if use_groq:
+                initial_answer = ask_groq(user_general_input)
+            else:
+                initial_answer = ask_gemini(user_general_input)
+            
+            # Check if answer indicates lack of knowledge or needs current info
+            needs_search = (
+                enable_search and 
+                ("I don't know" in initial_answer or 
+                 "not sure" in initial_answer or 
+                 "as of my knowledge" in initial_answer or
+                 "current information" in initial_answer or
+                 any(word in user_general_input.lower() for word in ["current", "recent", "today", "now", "202", "update"]))
+            )
+            
+            if needs_search:
+                with st.spinner("Searching for current information..."):
                     search_results = search_tavily(user_general_input)
                     if search_results:
-                        search_context = f"\n\nWeb search results:\n{search_results.get('answer', '')}\n\nRelevant links:\n"
-                        for i, result in enumerate(search_results.get('results', [])[:3]):
-                            search_context += f"{i+1}. {result['title']} - {result['url']}\n"
-            
-            # Generate response
-            if use_groq:
-                answer = ask_groq(user_general_input, context=search_context)
+                        search_context = f"""Web search results:
+                        {search_results.get('answer', '')}
+                        
+                        Relevant links:
+                        {chr(10).join(f"{i+1}. {result['title']} - {result['url']}" 
+                                     for i, result in enumerate(search_results.get('results', [])[:3]))}
+                        """
+                        
+                        # Generate final answer with search context
+                        if use_groq:
+                            final_answer = ask_groq(
+                                f"Question: {user_general_input}\n\n"
+                                f"Here's some additional information that might help answer better:\n"
+                                f"{search_context}\n\n"
+                                "Please provide an improved answer using this context."
+                            )
+                        else:
+                            final_answer = ask_gemini(
+                                f"Question: {user_general_input}\n\n"
+                                f"Here's some additional information that might help answer better:\n"
+                                f"{search_context}\n\n"
+                                "Please provide an improved answer using this context."
+                            )
+                        
+                        # Combine initial attempt with search-enhanced answer
+                        answer = (f"{initial_answer}\n\n"
+                                 f"🔍 I found some updated information:\n{final_answer}")
+                    else:
+                        answer = f"{initial_answer}\n\n⚠️ Web search failed to find additional information."
+                else:
+                    answer = initial_answer
             else:
-                answer = ask_gemini(user_general_input, context=search_context)
+                answer = initial_answer
             
             st.session_state.general_chat_history.append(AIMessage(content=answer))
             st.session_state.scroll = True
