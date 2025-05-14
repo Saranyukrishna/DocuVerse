@@ -452,7 +452,7 @@ with tab3:
                 for msg in st.session_state.chat_history[-10:]
             )
             
-            # Initial answer
+            # First try to answer using conversation history
             if use_groq:
                 initial_answer = ask_groq(
                     f"Conversation history:\n{conversation_context}\n\n"
@@ -465,53 +465,59 @@ with tab3:
                     f"New question: {user_input}\n\n"
                     "Please answer the new question considering the conversation history."
                 )
-
-            # Determine if search is needed
+            
+            # Check if answer indicates lack of knowledge or needs current info
             needs_search = (
                 enable_search and 
-                ("I don't know" in initial_answer.lower() or 
-                 "not sure" in initial_answer.lower() or 
-                 "as of my knowledge" in initial_answer.lower() or
-                 "current information" in initial_answer.lower() or
+                ("I don't know" in initial_answer or 
+                 "not sure" in initial_answer or 
+                 "as of my knowledge" in initial_answer or
+                 "current information" in initial_answer or
                  any(word in user_input.lower() for word in ["current", "recent", "today", "now", "202", "update"]))
             )
             
             if needs_search:
                 with st.spinner("Searching for current information..."):
                     search_results = search_tavily(user_input)
-                    if search_results and search_results.get("results"):
-                        # Compile content from top 3 Tavily results
-                        extracted_context = "\n\n".join(
-                            f"{i+1}. {r.get('title', 'Untitled')}:\n{r.get('content', '')}" 
-                            for i, r in enumerate(search_results["results"][:3])
+                    if search_results:
+                        relevant_links = "\n".join(
+                            f"{i+1}. {result['title']} - {result['url']}" 
+                            for i, result in enumerate(search_results.get('results', [])[:3])
                         )
-                        
-                        search_context = f"""Based on web search results below, extract and answer the user's question.
 
-Search Results:
-{extracted_context}
+                        search_context = f"""Web search results:
+{search_results.get('answer', '')}
+
+Relevant links:
+{relevant_links}
 """
-                        # Ask LLM to synthesize final answer using web info
+                        # Generate final answer with search context and conversation history
                         if use_groq:
                             final_answer = ask_groq(
+                                f"Conversation history:\n{conversation_context}\n\n"
+                                f"Question: {user_input}\n\n"
+                                f"Here's some additional information that might help answer better:\n"
                                 f"{search_context}\n\n"
-                                f"User Question: {user_input}\n\n"
-                                "Please extract relevant insights from the search results and provide a current, accurate answer."
+                                "Please provide an improved answer using this context and conversation history."
                             )
                         else:
                             final_answer = ask_gemini(
+                                f"Conversation history:\n{conversation_context}\n\n"
+                                f"Question: {user_input}\n\n"
+                                f"Here's some additional information that might help answer better:\n"
                                 f"{search_context}\n\n"
-                                f"User Question: {user_input}\n\n"
-                                "Please extract relevant insights from the search results and provide a current, accurate answer."
+                                "Please provide an improved answer using this context and conversation history."
                             )
-
-                        answer = f"{initial_answer}\n\n🔍 Here's the most current information I found:\n{final_answer}"
+                        
+                        # Combine initial attempt with search-enhanced answer
+                        answer = (f"{initial_answer}\n\n"
+                                 f"🔍 I found some updated information:\n{final_answer}")
                     else:
-                        answer = f"{initial_answer}\n\n⚠️ No useful search results found."
+                        answer = f"{initial_answer}\n\n⚠️ Web search failed to find additional information."
             else:
                 answer = initial_answer
             
-            # Add final assistant response
+            # Add assistant response to history
             st.session_state.chat_history.append(AIMessage(content=answer))
             st.session_state.scroll = True
             st.rerun()
