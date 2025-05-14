@@ -449,7 +449,7 @@ with tab3:
             # Prepare conversation context
             conversation_context = "\n".join(
                 f"User: {msg.content}" if isinstance(msg, HumanMessage) else f"Assistant: {msg.content}"
-                for msg in st.session_state.chat_history[-10:]  # Last 10 messages for context
+                for msg in st.session_state.chat_history[-10:]
             )
             
             # First try to answer using conversation history
@@ -480,19 +480,17 @@ with tab3:
                 with st.spinner("Searching for current information..."):
                     search_results = search_tavily(user_input)
                     if search_results:
-                        # Properly formatted f-string for search results
-                        relevant_links = "\n".join()
+                        relevant_links = "\n".join(
                             f"{i+1}. {result['title']} - {result['url']}" 
-                            for i, result in enumerate(search_results.get('results', [])[:3]
+                            for i, result in enumerate(search_results.get('results', [])[:3])
                         )
-                        
+
                         search_context = f"""Web search results:
-                        {search_results.get('answer', '')}
-                        
-                        Relevant links:
-                        {relevant_links}
-                        """
-                        
+{search_results.get('answer', '')}
+
+Relevant links:
+{relevant_links}
+"""
                         # Generate final answer with search context and conversation history
                         if use_groq:
                             final_answer = ask_groq(
@@ -523,5 +521,6 @@ with tab3:
             st.session_state.chat_history.append(AIMessage(content=answer))
             st.session_state.scroll = True
             st.rerun()
+
 # Cleanup on app exit
 st.session_state.cleanup = cleanup
