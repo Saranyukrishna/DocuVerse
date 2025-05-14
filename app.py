@@ -401,20 +401,25 @@ with tab2:
 #General Chat
 with tab3:
     st.subheader("General Chat")
-    
+
+    # Clear chat history only on full page reload
+    if 'first_load_done' not in st.session_state:
+        st.session_state.first_load_done = True
+        st.session_state.chat_history = []
+
     # Initialize chat history if not exists
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
-    
+
     # Add model selection and search toggle
     col1, col2 = st.columns(2)
     with col1:
         use_groq = st.toggle("Use Groq (faster)", value=True)
     with col2:
         enable_search = st.toggle("Enable web search", value=True)
-    
+
     general_chat_container = st.container()
-    
+
     # Display chat history
     with general_chat_container:
         for message in st.session_state.chat_history:
@@ -428,7 +433,7 @@ with tab3:
                     f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
                     unsafe_allow_html=True
                 )
-    
+
     # Input section
     user_input = st.text_input(
         "Ask any question:", 
@@ -436,22 +441,22 @@ with tab3:
         label_visibility="collapsed",
         placeholder="Type your message here..."
     )
-    
+
     if st.button("Send", key="general_send") and user_input:
         # Add user message to history
         st.session_state.chat_history.append(HumanMessage(content=user_input))
-        
+
         if user_input.lower() == 'clear chat':
             st.session_state.chat_history = []
             st.rerun()
-        
+
         with st.spinner("Thinking..."):
             # Prepare conversation context
             conversation_context = "\n".join(
                 f"User: {msg.content}" if isinstance(msg, HumanMessage) else f"Assistant: {msg.content}"
                 for msg in st.session_state.chat_history[-10:]
             )
-            
+
             # First try to answer using conversation history
             if use_groq:
                 initial_answer = ask_groq(
@@ -465,8 +470,8 @@ with tab3:
                     f"New question: {user_input}\n\n"
                     "Please answer the new question considering the conversation history."
                 )
-            
-            # Check if answer indicates lack of knowledge or needs current info
+
+            # Check if web search is needed
             needs_search = (
                 enable_search and 
                 ("I don't know" in initial_answer or 
@@ -475,7 +480,7 @@ with tab3:
                  "current information" in initial_answer or
                  any(word in user_input.lower() for word in ["current", "recent", "today", "now", "202", "update"]))
             )
-            
+
             if needs_search:
                 with st.spinner("Searching for current information..."):
                     search_results = search_tavily(user_input)
@@ -491,7 +496,7 @@ with tab3:
 Relevant links:
 {relevant_links}
 """
-                        # Generate final answer with search context and conversation history
+                        # Generate final answer with search context
                         if use_groq:
                             final_answer = ask_groq(
                                 f"Conversation history:\n{conversation_context}\n\n"
@@ -508,20 +513,18 @@ Relevant links:
                                 f"{search_context}\n\n"
                                 "Please provide an improved answer using this context and conversation history."
                             )
-                        
-                        # Combine initial attempt with search-enhanced answer
+
                         answer = (f"{initial_answer}\n\n"
-                                 f"🔍 I found some updated information:\n{final_answer}")
+                                  f"🔍 I found some updated information:\n{final_answer}")
                     else:
                         answer = f"{initial_answer}\n\n⚠️ Web search failed to find additional information."
             else:
                 answer = initial_answer
-            
+
             # Add assistant response to history
             st.session_state.chat_history.append(AIMessage(content=answer))
             st.session_state.scroll = True
             st.rerun()
-
 
 # Cleanup on app exit
 st.session_state.cleanup = cleanup
