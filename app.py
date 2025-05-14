@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 import tempfile
 import shutil
 from langchain.schema import HumanMessage, AIMessage
+from tavily import TavilyClient
+from groq import Groq
 
 # Load environment variables
 load_dotenv()
@@ -22,17 +24,25 @@ load_dotenv()
 cohere_api_key = os.getenv("COHERE_API_KEY")
 gemini_api_key = os.getenv("GOOGLE_API_KEY")
 
-if not cohere_api_key or not gemini_api_key:
+# Initialize APIs
+cohere_api_key = os.getenv("COHERE_API_KEY")
+gemini_api_key = os.getenv("GOOGLE_API_KEY")
+tavily_api_key = os.getenv("TAVILY_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")
+
+if not cohere_api_key or not gemini_api_key or not tavily_api_key or not groq_api_key:
     st.error("API keys not found. Please check your .env file")
     st.stop()
 
 try:
     co = cohere.Client(api_key=cohere_api_key)
     genai.configure(api_key=gemini_api_key)
+    tavily = TavilyClient(api_key=tavily_api_key)
+    groq = Groq(api_key=groq_api_key)
 except Exception as e:
     st.error(f"Failed to initialize API clients: {str(e)}")
     st.stop()
-
+    
 # Configuration
 MAX_PIXELS = 1568 * 1568
 SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
@@ -172,6 +182,37 @@ Question: {question}"""
         return response.text
     except Exception as e:
         return f"Error querying Gemini: {str(e)}"
+def search_tavily(query):
+    """Search the web using Tavily"""
+    try:
+        response = tavily.search(query=query, include_answer=True, include_raw_content=True)
+        return response
+    except Exception as e:
+        st.error(f"Error searching with Tavily: {str(e)}")
+        return None
+
+def ask_groq(question, context=None):
+    """Query Groq with optional context"""
+    try:
+        messages = []
+        if context:
+            messages.append({
+                "role": "system",
+                "content": f"Use this context if relevant: {context}"
+            })
+        messages.append({
+            "role": "user",
+            "content": question
+        })
+        
+        response = groq.chat.completions.create(
+            model="mixtral-8x7b-32768",
+            messages=messages,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error querying Groq: {str(e)}"
 
 # Streamlit UI
 st.set_page_config(page_title="Document Q&A", layout="wide")
@@ -361,28 +402,67 @@ with tab2:
     else:
         st.write("No images found in the document.")
 
+#General Chat
 with tab3:
     st.subheader("General Chat")
+    
+    # Add model selection and search toggle
+    col1, col2 = st.columns(2)
+    with col1:
+        use_groq = st.toggle("Use Groq (faster)", value=True)
+    with col2:
+        enable_search = st.toggle("Enable web search", value=True)
+    
     general_chat_container = st.container()
-    user_general_input = st.text_input("Ask any question:", key="general_input", label_visibility="collapsed")
-    general_send_button = st.button("Send", key="general_send")
-    if general_send_button and user_general_input:
+    
+    # Display chat history
+    with general_chat_container:
+        for message in st.session_state.general_chat_history:
+            if isinstance(message, HumanMessage):
+                st.markdown(
+                    f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
+                    unsafe_allow_html=True
+                )
+            elif isinstance(message, AIMessage):
+                st.markdown(
+                    f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
+                    unsafe_allow_html=True
+                )
+    
+    # Input section
+    user_general_input = st.text_input(
+        "Ask any question:", 
+        key="general_input", 
+        label_visibility="collapsed",
+        placeholder="Type your message here..."
+    )
+    
+    if st.button("Send", key="general_send") and user_general_input:
         st.session_state.general_chat_history.append(HumanMessage(content=user_general_input))
-        if user_general_input.lower() == 'close the chat':
-            st.stop()
+        
+        if user_general_input.lower() == 'clear chat':
+            st.session_state.general_chat_history = []
+            st.rerun()
+        
         with st.spinner("Thinking..."):
-            answer = ask_gemini(user_general_input)
+            # Get search results if enabled
+            search_context = ""
+            if enable_search:
+                with st.spinner("Searching the web..."):
+                    search_results = search_tavily(user_general_input)
+                    if search_results:
+                        search_context = f"\n\nWeb search results:\n{search_results.get('answer', '')}\n\nRelevant links:\n"
+                        for i, result in enumerate(search_results.get('results', [])[:3]):
+                            search_context += f"{i+1}. {result['title']} - {result['url']}\n"
+            
+            # Generate response
+            if use_groq:
+                answer = ask_groq(user_general_input, context=search_context)
+            else:
+                answer = ask_gemini(user_general_input, context=search_context)
+            
             st.session_state.general_chat_history.append(AIMessage(content=answer))
             st.session_state.scroll = True
             st.rerun()
-    render_chat(general_chat_container, st.session_state.general_chat_history)
-
-if st.session_state.scroll:
-    st.session_state.scroll = False
-    st.markdown(
-        """<script>window.scrollTo(0, document.body.scrollHeight);</script>""",
-        unsafe_allow_html=True
-    )
-
 # Cleanup on app exit
 st.session_state.cleanup = cleanup
