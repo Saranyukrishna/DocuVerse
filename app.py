@@ -494,8 +494,6 @@ with tab3:
                                  f"🔍 I found some updated information:\n{final_answer}")
                     else:
                         answer = f"{initial_answer}\n\n⚠️ Web search failed to find additional information."
-                else:
-                    answer = initial_answer
             else:
                 answer = initial_answer
             
