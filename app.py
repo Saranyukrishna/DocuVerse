@@ -481,7 +481,7 @@ with tab3:
                     search_results = search_tavily(user_input)
                     if search_results:
                         # Properly formatted f-string for search results
-                        relevant_links = "\n".join(
+                        relevant_links = "\n".join()
                             f"{i+1}. {result['title']} - {result['url']}" 
                             for i, result in enumerate(search_results.get('results', [])[:3]
                         )
