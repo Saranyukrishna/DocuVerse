@@ -402,6 +402,10 @@ with tab2:
 with tab3:
     st.subheader("General Chat")
     
+    # Initialize chat history if not exists
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
     # Add model selection and search toggle
     col1, col2 = st.columns(2)
     with col1:
@@ -413,7 +417,7 @@ with tab3:
     
     # Display chat history
     with general_chat_container:
-        for message in st.session_state.general_chat_history:
+        for message in st.session_state.chat_history:
             if isinstance(message, HumanMessage):
                 st.markdown(
                     f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
@@ -426,26 +430,41 @@ with tab3:
                 )
     
     # Input section
-    user_general_input = st.text_input(
+    user_input = st.text_input(
         "Ask any question:", 
         key="general_input", 
         label_visibility="collapsed",
         placeholder="Type your message here..."
     )
     
-    if st.button("Send", key="general_send") and user_general_input:
-        st.session_state.general_chat_history.append(HumanMessage(content=user_general_input))
+    if st.button("Send", key="general_send") and user_input:
+        # Add user message to history
+        st.session_state.chat_history.append(HumanMessage(content=user_input))
         
-        if user_general_input.lower() == 'clear chat':
-            st.session_state.general_chat_history = []
+        if user_input.lower() == 'clear chat':
+            st.session_state.chat_history = []
             st.rerun()
         
         with st.spinner("Thinking..."):
-            # First try to answer without search
+            # Prepare conversation context
+            conversation_context = "\n".join(
+                f"User: {msg.content}" if isinstance(msg, HumanMessage) else f"Assistant: {msg.content}"
+                for msg in st.session_state.chat_history[-10:]  # Last 10 messages for context
+            )
+            
+            # First try to answer using conversation history
             if use_groq:
-                initial_answer = ask_groq(user_general_input)
+                initial_answer = ask_groq(
+                    f"Conversation history:\n{conversation_context}\n\n"
+                    f"New question: {user_input}\n\n"
+                    "Please answer the new question considering the conversation history."
+                )
             else:
-                initial_answer = ask_gemini(user_general_input)
+                initial_answer = ask_gemini(
+                    f"Conversation history:\n{conversation_context}\n\n"
+                    f"New question: {user_input}\n\n"
+                    "Please answer the new question considering the conversation history."
+                )
             
             # Check if answer indicates lack of knowledge or needs current info
             needs_search = (
@@ -454,17 +473,17 @@ with tab3:
                  "not sure" in initial_answer or 
                  "as of my knowledge" in initial_answer or
                  "current information" in initial_answer or
-                 any(word in user_general_input.lower() for word in ["current", "recent", "today", "now", "202", "update"]))
+                 any(word in user_input.lower() for word in ["current", "recent", "today", "now", "202", "update"]))
             )
             
             if needs_search:
                 with st.spinner("Searching for current information..."):
-                    search_results = search_tavily(user_general_input)
+                    search_results = search_tavily(user_input)
                     if search_results:
-                        # Fixed the f-string formatting here
+                        # Properly formatted f-string for search results
                         relevant_links = "\n".join(
                             f"{i+1}. {result['title']} - {result['url']}" 
-                            for i, result in enumerate(search_results.get('results', [])[:3])
+                            for i, result in enumerate(search_results.get('results', [])[:3]
                         )
                         
                         search_context = f"""Web search results:
@@ -474,20 +493,22 @@ with tab3:
                         {relevant_links}
                         """
                         
-                        # Generate final answer with search context
+                        # Generate final answer with search context and conversation history
                         if use_groq:
                             final_answer = ask_groq(
-                                f"Question: {user_general_input}\n\n"
+                                f"Conversation history:\n{conversation_context}\n\n"
+                                f"Question: {user_input}\n\n"
                                 f"Here's some additional information that might help answer better:\n"
                                 f"{search_context}\n\n"
-                                "Please provide an improved answer using this context."
+                                "Please provide an improved answer using this context and conversation history."
                             )
                         else:
                             final_answer = ask_gemini(
-                                f"Question: {user_general_input}\n\n"
+                                f"Conversation history:\n{conversation_context}\n\n"
+                                f"Question: {user_input}\n\n"
                                 f"Here's some additional information that might help answer better:\n"
                                 f"{search_context}\n\n"
-                                "Please provide an improved answer using this context."
+                                "Please provide an improved answer using this context and conversation history."
                             )
                         
                         # Combine initial attempt with search-enhanced answer
@@ -498,7 +519,8 @@ with tab3:
             else:
                 answer = initial_answer
             
-            st.session_state.general_chat_history.append(AIMessage(content=answer))
+            # Add assistant response to history
+            st.session_state.chat_history.append(AIMessage(content=answer))
             st.session_state.scroll = True
             st.rerun()
 # Cleanup on app exit
