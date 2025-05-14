@@ -2,7 +2,7 @@ import streamlit as st
 import fitz  # PyMuPDF
 from docx import Document
 from pptx import Presentation
-from PIL import Image
+from PIL import Image, ImageEnhance
 import io
 import os
 from pathlib import Path
@@ -40,9 +40,10 @@ except Exception as e:
     st.stop()
     
 # Configuration
-MAX_PIXELS = 1568 * 1568
+MAX_PIXELS = 1568 * 1568  # Increased from original for better quality
 SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
 GEMINI_MODEL = "gemini-1.5-flash"
+IMAGE_QUALITY = 95  # Higher quality setting
 
 # Create temporary directory
 OUTPUT_DIR = Path(tempfile.mkdtemp())
@@ -55,29 +56,44 @@ def cleanup():
         shutil.rmtree(OUTPUT_DIR)
 
 def save_image(image_pil, image_count):
-    """Save image to temporary directory"""
+    """Save image to temporary directory with better quality"""
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     img_path = IMAGES_DIR / f"image_{image_count}.png"
-    image_pil.save(img_path)
+    
+    # Convert to RGB if needed (for better quality with JPEG)
+    if image_pil.mode in ('RGBA', 'LA'):
+        image_pil = image_pil.convert('RGB')
+    
+    # Save with higher quality
+    image_pil.save(img_path, quality=IMAGE_QUALITY, optimize=True)
     return str(img_path)
 
-def resize_image(pil_image):
-    """Resize image if too large"""
+def resize_image(pil_image, max_pixels=MAX_PIXELS):
+    """Resize image if too large while maintaining quality"""
     org_width, org_height = pil_image.size
-    if org_width * org_height > MAX_PIXELS:
-        scale_factor = (MAX_PIXELS / (org_width * org_height)) ** 0.5
+    if org_width * org_height > max_pixels:
+        scale_factor = (max_pixels / (org_width * org_height)) ** 0.5
         new_width = int(org_width * scale_factor)
         new_height = int(org_height * scale_factor)
-        pil_image.thumbnail((new_width, new_height))
+        # Use high-quality resampling
+        pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    return pil_image
 
 def base64_from_image(img_path):
-    """Convert image to base64"""
+    """Convert image to base64 with better quality"""
     try:
         pil_image = Image.open(img_path)
         img_format = pil_image.format or "PNG"
-        resize_image(pil_image)
+        
+        # Convert to RGB if needed
+        if pil_image.mode in ('RGBA', 'LA'):
+            pil_image = pil_image.convert('RGB')
+        
+        pil_image = resize_image(pil_image)
+        
         with io.BytesIO() as buffer:
-            pil_image.save(buffer, format=img_format)
+            # Save with higher quality
+            pil_image.save(buffer, format=img_format, quality=IMAGE_QUALITY, optimize=True)
             encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return f"data:image/{img_format.lower()};base64,{encoded}"
     except Exception as e:
@@ -85,7 +101,7 @@ def base64_from_image(img_path):
         return None
 
 def extract_pdf(file):
-    """Extract text and images from PDF"""
+    """Extract text and images from PDF with better image quality"""
     text = ""
     image_paths = []
     image_count = 1
@@ -98,6 +114,11 @@ def extract_pdf(file):
                     base_image = pdf.extract_image(xref)
                     img_bytes = base_image["image"]
                     img_pil = Image.open(io.BytesIO(img_bytes))
+                    
+                    # Convert to RGB if needed
+                    if img_pil.mode in ('RGBA', 'LA'):
+                        img_pil = img_pil.convert('RGB')
+                    
                     img_path = save_image(img_pil, image_count)
                     image_paths.append(img_path)
                     image_count += 1
@@ -106,7 +127,7 @@ def extract_pdf(file):
     return text, image_paths
 
 def extract_docx(file):
-    """Extract text and images from DOCX"""
+    """Extract text and images from DOCX with better image quality"""
     text = ""
     image_paths = []
     image_count = 1
@@ -119,6 +140,11 @@ def extract_docx(file):
             if "image" in rel_obj.target_ref:
                 img_data = rel_obj.target_part.blob
                 img_pil = Image.open(io.BytesIO(img_data))
+                
+                # Convert to RGB if needed
+                if img_pil.mode in ('RGBA', 'LA'):
+                    img_pil = img_pil.convert('RGB')
+                
                 img_path = save_image(img_pil, image_count)
                 image_paths.append(img_path)
                 image_count += 1
@@ -127,7 +153,7 @@ def extract_docx(file):
     return text, image_paths
 
 def extract_pptx(file):
-    """Extract text and images from PPTX"""
+    """Extract text and images from PPTX with better image quality"""
     text = ""
     image_paths = []
     image_count = 1
@@ -140,6 +166,11 @@ def extract_pptx(file):
                 if shape.shape_type == 13:  # 13 = picture
                     img_stream = shape.image.blob
                     img_pil = Image.open(io.BytesIO(img_stream))
+                    
+                    # Convert to RGB if needed
+                    if img_pil.mode in ('RGBA', 'LA'):
+                        img_pil = img_pil.convert('RGB')
+                    
                     img_path = save_image(img_pil, image_count)
                     image_paths.append(img_path)
                     image_count += 1
@@ -178,6 +209,7 @@ Question: {question}"""
         return response.text
     except Exception as e:
         return f"Error querying Gemini: {str(e)}"
+
 def search_tavily(query):
     """Search the web using Tavily"""
     try:
@@ -316,8 +348,35 @@ with tab2:
         if st.session_state.selected_img:
             try:
                 selected_img = Image.open(st.session_state.selected_img)
-                selected_img.thumbnail((150, 150))
-                st.image(selected_img, caption="Selected Image", use_container_width=True)
+                
+                # Add image enhancement options
+                with st.expander("Image Enhancement Options"):
+                    enhance = st.checkbox("Enhance Image Quality", value=True)
+                    contrast = st.slider("Adjust Contrast", 0.5, 2.0, 1.0)
+                    sharpness = st.slider("Adjust Sharpness", 0.0, 2.0, 1.0)
+                    
+                    if enhance:
+                        # Apply enhancements
+                        enhancer = ImageEnhance.Contrast(selected_img)
+                        selected_img = enhancer.enhance(contrast)
+                        enhancer = ImageEnhance.Sharpness(selected_img)
+                        selected_img = enhancer.enhance(sharpness)
+                
+                # Display the (possibly enhanced) image
+                st.image(selected_img, 
+                         caption="Selected Image", 
+                         use_column_width=True,
+                         output_format="PNG")
+                
+                # Add download button for the image
+                with io.BytesIO() as buffer:
+                    selected_img.save(buffer, format="PNG", quality=IMAGE_QUALITY)
+                    st.download_button(
+                        label="Download Enhanced Image",
+                        data=buffer.getvalue(),
+                        file_name="enhanced_image.png",
+                        mime="image/png"
+                    )
             except Exception as e:
                 st.error(f"Error loading selected image: {str(e)}")
         else:
@@ -326,20 +385,7 @@ with tab2:
     # Chat history container
     if st.session_state.selected_img:
         image_chat_container = st.container()
-        
-        # Display chat history first
-        with image_chat_container:
-            for message in st.session_state.image_chat_history:
-                if isinstance(message, HumanMessage):
-                    st.markdown(
-                        f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
-                        unsafe_allow_html=True
-                    )
-                elif isinstance(message, AIMessage):
-                    st.markdown(
-                        f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
-                        unsafe_allow_html=True
-                    )
+        render_chat(image_chat_container, st.session_state.image_chat_history)
 
         # Input section at the bottom
         input_col = st.container()
@@ -387,8 +433,10 @@ with tab2:
                     with cols[col_idx]:
                         try:
                             img = Image.open(img_path)
-                            img.thumbnail((120, 120))
-                            st.image(img, use_container_width=True)
+                            # Display larger thumbnails with better quality
+                            st.image(img, 
+                                     use_column_width=True,
+                                     output_format="PNG")
                             if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):
                                 st.session_state.selected_img = img_path
                                 st.session_state.image_chat_history = []  # Clear chat when new image selected
@@ -398,7 +446,6 @@ with tab2:
     else:
         st.write("No images found in the document.")
 
-#General Chat
 with tab3:
     st.subheader("General Chat")
 
@@ -419,20 +466,7 @@ with tab3:
         enable_search = st.toggle("Enable web search", value=True)
 
     general_chat_container = st.container()
-
-    # Display chat history
-    with general_chat_container:
-        for message in st.session_state.chat_history:
-            if isinstance(message, HumanMessage):
-                st.markdown(
-                    f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
-                    unsafe_allow_html=True
-                )
-            elif isinstance(message, AIMessage):
-                st.markdown(
-                    f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
-                    unsafe_allow_html=True
-                )
+    render_chat(general_chat_container, st.session_state.chat_history)
 
     # Input section
     user_input = st.text_input(
