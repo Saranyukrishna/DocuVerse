@@ -393,7 +393,7 @@ with tab2:
                 # Display the (possibly enhanced) image
                 st.image(selected_img, 
                          caption="Selected Image", 
-                         use_column_width=True,
+                         use_container_width=True,
                          output_format="PNG")
                 
                 # Add download button for the image
@@ -463,7 +463,7 @@ with tab2:
                             img = Image.open(img_path)
                             # Display larger thumbnails with better quality
                             st.image(img, 
-                                     use_column_width=True,
+                                     use_container_width=True,
                                      output_format="PNG")
                             if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):
                                 st.session_state.selected_img = img_path
