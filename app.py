@@ -44,7 +44,7 @@ MAX_PIXELS = 1568 * 1568  # Increased from original for better quality
 SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
 GEMINI_MODEL = "gemini-1.5-flash"
 IMAGE_QUALITY = 95  # Higher quality setting
-BLANK_IMAGE_THRESHOLD = 0.95  # Skip images with >95% dark pixels
+BLANK_IMAGE_THRESHOLD = 0.95  # Skip images with >95% dark or white pixels
 
 # Create temporary directory
 OUTPUT_DIR = Path(tempfile.mkdtemp())
@@ -57,7 +57,7 @@ def cleanup():
         shutil.rmtree(OUTPUT_DIR)
 
 def is_blank_image(pil_image, threshold=BLANK_IMAGE_THRESHOLD):
-    """Check if image is mostly blank/black"""
+    """Check if image is mostly blank/black or white"""
     if pil_image.mode != 'RGB':
         pil_image = pil_image.convert('RGB')
     
@@ -65,11 +65,20 @@ def is_blank_image(pil_image, threshold=BLANK_IMAGE_THRESHOLD):
     img_array = np.array(pil_image)
     
     # Calculate the percentage of black/dark pixels
-    dark_pixels = np.sum(img_array < 50)  # pixels with values < 50 (dark)
-    total_pixels = img_array.size
+    # Check all channels (R, G, B) for darkness
+    dark_pixels = np.sum((img_array[:,:,0] < 50) & 
+                         (img_array[:,:,1] < 50) & 
+                         (img_array[:,:,2] < 50))
+    total_pixels = img_array.shape[0] * img_array.shape[1]
     dark_ratio = dark_pixels / total_pixels
     
-    return dark_ratio > threshold
+    # Also check for completely white images
+    white_pixels = np.sum((img_array[:,:,0] > 200) & 
+                         (img_array[:,:,1] > 200) & 
+                         (img_array[:,:,2] > 200))
+    white_ratio = white_pixels / total_pixels
+    
+    return dark_ratio > threshold or white_ratio > threshold
 
 def save_image(image_pil, image_count):
     """Save image to temporary directory with better quality"""
@@ -461,14 +470,12 @@ with tab2:
                     with cols[col_idx]:
                         try:
                             img = Image.open(img_path)
-                            # Display larger thumbnails with better quality
-                            st.image(img, 
-                                     use_container_width=True,
-                                     output_format="PNG")
-                            if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):
-                                st.session_state.selected_img = img_path
-                                st.session_state.image_chat_history = []  # Clear chat when new image selected
-                                st.rerun()
+                            if not is_blank_image(img):  # Only display non-blank images
+                                st.image(img, use_container_width=True, output_format="PNG")
+                                if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):
+                                    st.session_state.selected_img = img_path
+                                    st.session_state.image_chat_history = []  # Clear chat when new image selected
+                                    st.rerun()
                         except Exception as e:
                             st.error(f"Error loading image: {str(e)}")
     else:
