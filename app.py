@@ -44,6 +44,7 @@ MAX_PIXELS = 1568 * 1568  # Increased from original for better quality
 SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
 GEMINI_MODEL = "gemini-1.5-flash"
 IMAGE_QUALITY = 95  # Higher quality setting
+BLANK_IMAGE_THRESHOLD = 0.95  # Skip images with >95% dark pixels
 
 # Create temporary directory
 OUTPUT_DIR = Path(tempfile.mkdtemp())
@@ -54,6 +55,21 @@ def cleanup():
     """Remove temporary files"""
     if OUTPUT_DIR.exists():
         shutil.rmtree(OUTPUT_DIR)
+
+def is_blank_image(pil_image, threshold=BLANK_IMAGE_THRESHOLD):
+    """Check if image is mostly blank/black"""
+    if pil_image.mode != 'RGB':
+        pil_image = pil_image.convert('RGB')
+    
+    # Convert to numpy array
+    img_array = np.array(pil_image)
+    
+    # Calculate the percentage of black/dark pixels
+    dark_pixels = np.sum(img_array < 50)  # pixels with values < 50 (dark)
+    total_pixels = img_array.size
+    dark_ratio = dark_pixels / total_pixels
+    
+    return dark_ratio > threshold
 
 def save_image(image_pil, image_count):
     """Save image to temporary directory with better quality"""
@@ -115,6 +131,10 @@ def extract_pdf(file):
                     img_bytes = base_image["image"]
                     img_pil = Image.open(io.BytesIO(img_bytes))
                     
+                    # Skip blank/black images
+                    if is_blank_image(img_pil):
+                        continue
+                    
                     # Convert to RGB if needed
                     if img_pil.mode in ('RGBA', 'LA'):
                         img_pil = img_pil.convert('RGB')
@@ -141,6 +161,10 @@ def extract_docx(file):
                 img_data = rel_obj.target_part.blob
                 img_pil = Image.open(io.BytesIO(img_data))
                 
+                # Skip blank/black images
+                if is_blank_image(img_pil):
+                    continue
+                
                 # Convert to RGB if needed
                 if img_pil.mode in ('RGBA', 'LA'):
                     img_pil = img_pil.convert('RGB')
@@ -166,6 +190,10 @@ def extract_pptx(file):
                 if shape.shape_type == 13:  # 13 = picture
                     img_stream = shape.image.blob
                     img_pil = Image.open(io.BytesIO(img_stream))
+                    
+                    # Skip blank/black images
+                    if is_blank_image(img_pil):
+                        continue
                     
                     # Convert to RGB if needed
                     if img_pil.mode in ('RGBA', 'LA'):
