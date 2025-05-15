@@ -176,30 +176,36 @@ def extract_pptx(file):
     except Exception as e:
         st.error(f"Error processing PPTX: {str(e)}")
     return text, image_paths
-
+    
+#gemini model
 def ask_gemini(question, context=None, img_path=None):
     """Query Gemini with optional context and/or image"""
     try:
         model = genai.GenerativeModel(GEMINI_MODEL)
         if img_path and context:
-            prompt = f"""Answer the question based on the following image and additional context if relevant.
-If the question is general and not related to the context, answer it generally.
+            prompt = f"""You are an expert assistant. Analyze the following question using both the image and the provided context if relevant.
 
+- Use the context and image to answer the question with precision.
+- If the image or context is not relevant to the question, provide a general answer.
+- Keep the response clear, concise, and informative.
 Context: {context}
 Question: {question}"""
             img = Image.open(img_path)
             response = model.generate_content([prompt, img])
         elif img_path:
-            prompt = f"""Answer the question based on the following image if relevant.
-If the question is general and not about the image, answer it generally.
+            prompt = f"""You are a knowledgeable assistant. Carefully analyze the provided image to answer the question below.
+
+- Use the image to answer the question only if it's relevant.
+- If the image is not related to the question, provide a general and accurate response based on your knowledge.
 
 Question: {question}"""
             img = Image.open(img_path)
             response = model.generate_content([prompt, img])
         elif context:
-            prompt = f"""Answer the question based on the following context if relevant.
-If the question is general and not related to the context, answer it generally.
+            prompt = f"""You are an intelligent assistant. Use the following context to answer the question if it's relevant.
 
+- If the context helps, incorporate it into your response.
+- If the question is general or unrelated to the context, answer it independently.
 Context: {context}
 Question: {question}"""
             response = model.generate_content(prompt)
@@ -208,16 +214,16 @@ Question: {question}"""
         return response.text
     except Exception as e:
         return f"Error querying Gemini: {str(e)}"
-
-def search_tavily(query):
-    """Search the web using Tavily"""
+#tavily:- for web search results
+def search_tavily(query,search_depth='advanced',max_results=5):
+    """Search the web using Tavily with enhanced parameters"""
     try:
-        response = tavily.search(query=query, include_answer=True, include_raw_content=True)
+        response = tavily.search(query=query, include_answer=True, include_raw_content=True,include_sources=True,max_results=max_results,search_depth=search_depth)
         return response
     except Exception as e:
         st.error(f"Error searching with Tavily: {str(e)}")
         return None
-
+#groq for general chat
 def ask_groq(question, context=None):
     """Query Groq with optional context"""
     try:
@@ -235,7 +241,7 @@ def ask_groq(question, context=None):
         response = groq.chat.completions.create(
             model="llama3-70b-8192",
             messages=messages,
-            temperature=0.7,
+            temperature=0.8,
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -244,8 +250,6 @@ def ask_groq(question, context=None):
 # Streamlit UI
 st.set_page_config(page_title="Document Q&A", layout="wide")
 st.title("📄 Document Q&A with Image Analysis")
-
-# Initialize session state
 if 'text_chat_history' not in st.session_state:
     st.session_state.text_chat_history = []
 if 'image_chat_history' not in st.session_state:
@@ -262,11 +266,9 @@ if 'processed' not in st.session_state:
 if 'prev_uploaded_file' not in st.session_state:
     st.session_state.prev_uploaded_file = None
 
-# File upload with reset logic
 with st.expander("Upload Document", expanded=True):
     uploaded_file = st.file_uploader("Choose a file", type=SUPPORTED_TYPES, key="file_uploader")
 
-# Reset state when a new file is uploaded
 if uploaded_file != st.session_state.prev_uploaded_file:
     # Clear previous content
     st.session_state.processed = False
@@ -275,11 +277,10 @@ if uploaded_file != st.session_state.prev_uploaded_file:
     st.session_state.selected_img = None
     st.session_state.text_chat_history = []
     st.session_state.image_chat_history = []
-    
-    # Clean up previous temporary files
+
     cleanup()
     
-    # Process new file
+
     if uploaded_file:
         with st.spinner("Extracting content from document..."):
             file_ext = uploaded_file.name.split(".")[-1].lower()
@@ -348,26 +349,20 @@ with tab2:
             try:
                 selected_img = Image.open(st.session_state.selected_img)
                 
-                # Add image enhancement options
                 with st.expander("Image Enhancement Options"):
                     enhance = st.checkbox("Enhance Image Quality", value=True)
                     contrast = st.slider("Adjust Contrast", 0.5, 2.0, 1.0)
                     sharpness = st.slider("Adjust Sharpness", 0.0, 2.0, 1.0)
                     
                     if enhance:
-                        # Apply enhancements
                         enhancer = ImageEnhance.Contrast(selected_img)
                         selected_img = enhancer.enhance(contrast)
                         enhancer = ImageEnhance.Sharpness(selected_img)
                         selected_img = enhancer.enhance(sharpness)
-                
-                # Display the (possibly enhanced) image
                 st.image(selected_img, 
                          caption="Selected Image", 
                          use_container_width=True,
                          output_format="PNG")
-                
-                # Add download button for the image
                 with io.BytesIO() as buffer:
                     selected_img.save(buffer, format="PNG", quality=IMAGE_QUALITY)
                     st.download_button(
@@ -381,7 +376,6 @@ with tab2:
         else:
             st.info("No image selected")
 
-    # Chat history container
     if st.session_state.selected_img:
         image_chat_container = st.container()
         render_chat(image_chat_container, st.session_state.image_chat_history)
@@ -415,7 +409,6 @@ with tab2:
                 st.session_state.scroll = True
                 st.rerun()
 
-    # Image selection grid at the bottom
     if st.session_state.processed and st.session_state.image_paths:
         st.divider()
         st.write("Select an image to analyze:")
@@ -446,16 +439,13 @@ with tab2:
 with tab3:
     st.subheader("General Chat")
 
-    # Clear chat history only on full page reload
     if 'first_load_done' not in st.session_state:
         st.session_state.first_load_done = True
         st.session_state.chat_history = []
 
-    # Initialize chat history if not exists
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
 
-    # Add model selection and search toggle
     col1, col2 = st.columns(2)
     with col1:
         use_groq = st.toggle("Use Groq (faster)", value=True)
@@ -474,7 +464,6 @@ with tab3:
     )
 
     if st.button("Send", key="general_send") and user_input:
-        # Add user message to history
         st.session_state.chat_history.append(HumanMessage(content=user_input))
 
         if user_input.lower() == 'clear chat':
@@ -482,13 +471,10 @@ with tab3:
             st.rerun()
 
         with st.spinner("Thinking..."):
-            # Prepare conversation context
             conversation_context = "\n".join(
                 f"User: {msg.content}" if isinstance(msg, HumanMessage) else f"Assistant: {msg.content}"
                 for msg in st.session_state.chat_history[-10:]
             )
-
-            # First try to answer using conversation history
             if use_groq:
                 initial_answer = ask_groq(
                     f"Conversation history:\n{conversation_context}\n\n"
@@ -501,8 +487,6 @@ with tab3:
                     f"New question: {user_input}\n\n"
                     "Please answer the new question considering the conversation history."
                 )
-
-            # Check if web search is needed
             needs_search = (
                 enable_search and 
                 ("I don't know" in initial_answer or 
@@ -546,16 +530,13 @@ Relevant links:
                             )
 
                         answer = (f"{initial_answer}\n\n"
-                                  f"🔍 I found some updated information:\n{final_answer}")
+                                  f"I found some updated information:\n{final_answer}")
                     else:
-                        answer = f"{initial_answer}\n\n⚠️ Web search failed to find additional information."
+                        answer = f"{initial_answer}\n\n  Web search failed to find additional information."
             else:
                 answer = initial_answer
-
-            # Add assistant response to history
             st.session_state.chat_history.append(AIMessage(content=answer))
             st.session_state.scroll = True
             st.rerun()
 
-# Cleanup on app exit
 st.session_state.cleanup = cleanup
