@@ -1,4 +1,5 @@
 import streamlit as st
+st.set_page_config(page_title="Document Q&A", layout="wide")
 import fitz  
 from docx import Document
 from pptx import Presentation
