@@ -17,8 +17,19 @@ from langchain.schema import HumanMessage, AIMessage
 from tavily import TavilyClient
 from groq import Groq
 
-load_dotenv()
+scroll_js = """
+<script>
+function scrollToTop(containerId) {
+    const container = document.getElementById(containerId);
+    if (container) {
+        container.scrollTop = 0;
+    }
+}
+</script>
+"""
+st.components.v1.html(scroll_js)
 
+load_dotenv()
 
 cohere_api_key = os.getenv("COHERE_API_KEY")
 gemini_api_key = os.getenv("GOOGLE_API_KEY")
@@ -42,12 +53,11 @@ SUPPORTED_TYPES=["pdf", "docx", "pptx"]
 GEMINI_MODEL="gemini-1.5-flash"
 IMAGE_QUALITY=95  
 
-#temporaril store files in streamlit server
+
 OUTPUT_DIR=Path(tempfile.mkdtemp())
 IMAGES_DIR=OUTPUT_DIR /"images"
 TEXT_FILE=OUTPUT_DIR /"extracted_text.txt"
 
-#remove the exsisiting fules after the clear of the session
 def cleanup():
     if OUTPUT_DIR.exists():
         shutil.rmtree(OUTPUT_DIR)
@@ -103,7 +113,7 @@ def base64_from_image(img_path):
         st.error(f"Error processing image: {str(e)}")
         return None
         
-#extracting text adn images from pdf 
+# Extracting text and images from pdf 
 def extract_pdf(file):
     text = ""
     image_paths = []
@@ -127,7 +137,8 @@ def extract_pdf(file):
     except Exception as e:
         st.error(f"Error processing PDF: {str(e)}")
     return text, image_paths
-#extrating text and images form the docs
+
+# Extracting text and images from docs
 def extract_docx(file):
     text = ""
     image_paths = []
@@ -151,7 +162,8 @@ def extract_docx(file):
     except Exception as e:
         st.error(f"Error processing DOCX: {str(e)}")
     return text, image_paths
-#extractning text and images from ppt
+
+# Extracting text and images from ppt
 def extract_pptx(file):
     text = ""
     image_paths = []
@@ -177,7 +189,7 @@ def extract_pptx(file):
         st.error(f"Error processing PPTX: {str(e)}")
     return text, image_paths
     
-#gemini model
+# Gemini model
 def ask_gemini(question, context=None, img_path=None):
     """Query Gemini with optional context and/or image"""
     try:
@@ -214,7 +226,8 @@ Question: {question}"""
         return response.text
     except Exception as e:
         return f"Error querying Gemini: {str(e)}"
-#tavily:- for web search results
+
+# Tavily: for web search results
 def search_tavily(query,search_depth='advanced',max_results=5):
     """Search the web using Tavily with enhanced parameters"""
     try:
@@ -223,7 +236,8 @@ def search_tavily(query,search_depth='advanced',max_results=5):
     except Exception as e:
         st.error(f"Error searching with Tavily: {str(e)}")
         return None
-#groq for general chat
+
+# Groq for general chat
 def ask_groq(question, context=None):
     """Query Groq with optional context"""
     try:
@@ -247,9 +261,24 @@ def ask_groq(question, context=None):
     except Exception as e:
         return f"Error querying Groq: {str(e)}"
 
+def render_chat(container, chat_history):
+    with container:
+        for message in chat_history:
+            if isinstance(message, HumanMessage):
+                st.markdown(
+                    f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
+                    unsafe_allow_html=True
+                )
+            elif isinstance(message, AIMessage):
+                st.markdown(
+                    f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
+                    unsafe_allow_html=True
+                )
+
 # Streamlit UI
 st.set_page_config(page_title="Document Q&A", layout="wide")
 st.title("📄 Document Q&A with Image Analysis")
+
 if 'text_chat_history' not in st.session_state:
     st.session_state.text_chat_history = []
 if 'image_chat_history' not in st.session_state:
@@ -280,7 +309,6 @@ if uploaded_file != st.session_state.prev_uploaded_file:
 
     cleanup()
     
-
     if uploaded_file:
         with st.spinner("Extracting content from document..."):
             file_ext = uploaded_file.name.split(".")[-1].lower()
@@ -303,240 +331,261 @@ if uploaded_file != st.session_state.prev_uploaded_file:
                 st.error(f"Failed to process document: {str(e)}")
                 cleanup()
 
-def render_chat(container, chat_history):
-    with container:
-        for message in chat_history:
-            if isinstance(message, HumanMessage):
-                st.markdown(
-                    f"<div style='text-align: right; color: white; background-color: #0a84ff; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: right; clear: both;'>{message.content}</div>",
-                    unsafe_allow_html=True
-                )
-            elif isinstance(message, AIMessage):
-                st.markdown(
-                    f"<div style='text-align: left; color: black; background-color: #d1d1d1; padding: 8px; border-radius: 10px; margin: 5px 0; max-width: 80%; float: left; clear: both;'>{message.content}</div>",
-                    unsafe_allow_html=True
-                )
-
 # Tabs
 tab1, tab2, tab3 = st.tabs(["📝 Text Analysis", "🖼️ Image Analysis", "💬 General Chat"])
 
 with tab1:
-    st.subheader("Text Analysis")
-    if st.session_state.processed:
-        with st.expander("View Extracted Text"):
-            st.text_area("Extracted Text", st.session_state.text, height=200, label_visibility="collapsed")
-    text_chat_container = st.container()
-    user_text_input = st.text_input("Ask about the text content:", key="text_input", label_visibility="collapsed")
-    text_send_button = st.button("Send", key="text_send")
-    if text_send_button and user_text_input:
-        st.session_state.text_chat_history.append(HumanMessage(content=user_text_input))
-        if user_text_input.lower() == 'close the chat':
-            st.stop()
-        with st.spinner("Analyzing text..."):
-            answer = ask_gemini(user_text_input, context=st.session_state.text)
-            st.session_state.text_chat_history.append(AIMessage(content=answer))
-            st.session_state.scroll = True
-            st.rerun()
-    render_chat(text_chat_container, st.session_state.text_chat_history)
-
-with tab2:
-    st.subheader("Image Analysis")
-    
-    # Image selection and display at the top
-    img_col, _ = st.columns([1, 3])
-    with img_col:
-        if st.session_state.selected_img:
-            try:
-                selected_img = Image.open(st.session_state.selected_img)
-                
-                with st.expander("Image Enhancement Options"):
-                    enhance = st.checkbox("Enhance Image Quality", value=True)
-                    contrast = st.slider("Adjust Contrast", 0.5, 2.0, 1.0)
-                    sharpness = st.slider("Adjust Sharpness", 0.0, 2.0, 1.0)
-                    
-                    if enhance:
-                        enhancer = ImageEnhance.Contrast(selected_img)
-                        selected_img = enhancer.enhance(contrast)
-                        enhancer = ImageEnhance.Sharpness(selected_img)
-                        selected_img = enhancer.enhance(sharpness)
-                st.image(selected_img, 
-                         caption="Selected Image", 
-                         use_container_width=True,
-                         output_format="PNG")
-                with io.BytesIO() as buffer:
-                    selected_img.save(buffer, format="PNG", quality=IMAGE_QUALITY)
-                    st.download_button(
-                        label="Download Enhanced Image",
-                        data=buffer.getvalue(),
-                        file_name="enhanced_image.png",
-                        mime="image/png"
-                    )
-            except Exception as e:
-                st.error(f"Error loading selected image: {str(e)}")
-        else:
-            st.info("No image selected")
-
-    if st.session_state.selected_img:
-        image_chat_container = st.container()
-        render_chat(image_chat_container, st.session_state.image_chat_history)
-
-        # Input section at the bottom
-        input_col = st.container()
-        with input_col:
-            st.write("**Ask about the image**")
-            user_image_input = st.text_input(
-                "Ask about the image:", 
-                key="image_input", 
-                placeholder="Type your question here...",
-                label_visibility="collapsed",
-                disabled=not st.session_state.selected_img
-            )
-            image_send_button = st.button("Send", key="image_send", disabled=not st.session_state.selected_img)
+    tab1_container = st.container()
+    with tab1_container:
+        st.subheader("Text Analysis")
+        if st.session_state.processed:
+            with st.expander("View Extracted Text"):
+                st.text_area("Extracted Text", st.session_state.text, height=200, label_visibility="collapsed")
         
-        # Handle user input and generate responses
-        if image_send_button and user_image_input:
-            st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
-            if user_image_input.lower() == 'close the chat':
+        text_chat_container = st.container()
+        render_chat(text_chat_container, st.session_state.text_chat_history)
+        
+        user_text_input = st.text_input("Ask about the text content:", key="text_input", label_visibility="collapsed")
+        col1, col2 = st.columns([4,1])
+        with col1:
+            text_send_button = st.button("Send", key="text_send")
+        with col2:
+            st.button("↑ Scroll to Top", key="scroll_text", 
+                     on_click=lambda: st.components.v1.html(
+                         f"<script>scrollToTop('{tab1_container._html_id}')</script>",
+                         height=0
+                     ))
+        
+        if text_send_button and user_text_input:
+            st.session_state.text_chat_history.append(HumanMessage(content=user_text_input))
+            if user_text_input.lower() == 'close the chat':
                 st.stop()
-            
-            with st.spinner("Analyzing image..."):
-                answer = ask_gemini(
-                    user_image_input, 
-                    img_path=st.session_state.selected_img, 
-                    context=st.session_state.text
-                )
-                st.session_state.image_chat_history.append(AIMessage(content=answer))
+            with st.spinner("Analyzing text..."):
+                answer = ask_gemini(user_text_input, context=st.session_state.text)
+                st.session_state.text_chat_history.append(AIMessage(content=answer))
                 st.session_state.scroll = True
                 st.rerun()
 
-    if st.session_state.processed and st.session_state.image_paths:
-        st.divider()
-        st.write("Select an image to analyze:")
-        num_cols = 4
-        image_paths = st.session_state.image_paths
-        rows = (len(image_paths) + num_cols - 1) // num_cols
+with tab2:
+    tab2_container = st.container()
+    with tab2_container:
+        st.subheader("Image Analysis")
         
-        for row in range(rows):
-            cols = st.columns(num_cols)
-            for col_idx in range(num_cols):
-                img_idx = row * num_cols + col_idx
-                if img_idx < len(image_paths):
-                    img_path = image_paths[img_idx]
-                    with cols[col_idx]:
-                        try:
-                            img = Image.open(img_path)
-                            if not is_blank_image(img):  # Only display non-blank images
-                                st.image(img, use_container_width=True, output_format="PNG")
-                                if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):
-                                    st.session_state.selected_img = img_path
-                                    st.session_state.image_chat_history = []  # Clear chat when new image selected
-                                    st.rerun()
-                        except Exception as e:
-                            st.error(f"Error loading image: {str(e)}")
-    else:
-        st.write("No images found in the document.")
+        # Image selection and display at the top
+        img_col, _ = st.columns([1, 3])
+        with img_col:
+            if st.session_state.selected_img:
+                try:
+                    selected_img = Image.open(st.session_state.selected_img)
+                    
+                    with st.expander("Image Enhancement Options"):
+                        enhance = st.checkbox("Enhance Image Quality", value=True)
+                        contrast = st.slider("Adjust Contrast", 0.5, 2.0, 1.0)
+                        sharpness = st.slider("Adjust Sharpness", 0.0, 2.0, 1.0)
+                        
+                        if enhance:
+                            enhancer = ImageEnhance.Contrast(selected_img)
+                            selected_img = enhancer.enhance(contrast)
+                            enhancer = ImageEnhance.Sharpness(selected_img)
+                            selected_img = enhancer.enhance(sharpness)
+                    st.image(selected_img, 
+                             caption="Selected Image", 
+                             use_container_width=True,
+                             output_format="PNG")
+                    with io.BytesIO() as buffer:
+                        selected_img.save(buffer, format="PNG", quality=IMAGE_QUALITY)
+                        st.download_button(
+                            label="Download Enhanced Image",
+                            data=buffer.getvalue(),
+                            file_name="enhanced_image.png",
+                            mime="image/png"
+                        )
+                except Exception as e:
+                    st.error(f"Error loading selected image: {str(e)}")
+            else:
+                st.info("No image selected")
+
+        if st.session_state.selected_img:
+            image_chat_container = st.container()
+            render_chat(image_chat_container, st.session_state.image_chat_history)
+
+            # Input section at the bottom
+            input_col = st.container()
+            with input_col:
+                st.write("**Ask about the image**")
+                user_image_input = st.text_input(
+                    "Ask about the image:", 
+                    key="image_input", 
+                    placeholder="Type your question here...",
+                    label_visibility="collapsed",
+                    disabled=not st.session_state.selected_img
+                )
+                col1, col2 = st.columns([4,1])
+                with col1:
+                    image_send_button = st.button("Send", key="image_send", disabled=not st.session_state.selected_img)
+                with col2:
+                    st.button("↑ Scroll to Top", key="scroll_image", 
+                             on_click=lambda: st.components.v1.html(
+                                 f"<script>scrollToTop('{tab2_container._html_id}')</script>",
+                                 height=0
+                             ))
+            
+            # Handle user input and generate responses
+            if image_send_button and user_image_input:
+                st.session_state.image_chat_history.append(HumanMessage(content=user_image_input))
+                if user_image_input.lower() == 'close the chat':
+                    st.stop()
+                
+                with st.spinner("Analyzing image..."):
+                    answer = ask_gemini(
+                        user_image_input, 
+                        img_path=st.session_state.selected_img, 
+                        context=st.session_state.text
+                    )
+                    st.session_state.image_chat_history.append(AIMessage(content=answer))
+                    st.session_state.scroll = True
+                    st.rerun()
+
+        if st.session_state.processed and st.session_state.image_paths:
+            st.divider()
+            st.write("Select an image to analyze:")
+            num_cols = 4
+            image_paths = st.session_state.image_paths
+            rows = (len(image_paths) + num_cols - 1) // num_cols
+            
+            for row in range(rows):
+                cols = st.columns(num_cols)
+                for col_idx in range(num_cols):
+                    img_idx = row * num_cols + col_idx
+                    if img_idx < len(image_paths):
+                        img_path = image_paths[img_idx]
+                        with cols[col_idx]:
+                            try:
+                                img = Image.open(img_path)
+                                if not is_blank_image(img):  # Only display non-blank images
+                                    st.image(img, use_container_width=True, output_format="PNG")
+                                    if st.button(f"Select {img_idx+1}", key=f"btn_{img_idx}"):
+                                        st.session_state.selected_img = img_path
+                                        st.session_state.image_chat_history = []  # Clear chat when new image selected
+                                        st.rerun()
+                            except Exception as e:
+                                st.error(f"Error loading image: {str(e)}")
+        else:
+            st.write("No images found in the document.")
 
 with tab3:
-    st.subheader("General Chat")
+    tab3_container = st.container()
+    with tab3_container:
+        st.subheader("General Chat")
 
-    if 'first_load_done' not in st.session_state:
-        st.session_state.first_load_done = True
-        st.session_state.chat_history = []
-
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = []
-
-    col1, col2 = st.columns(2)
-    with col1:
-        use_groq = st.toggle("Use Groq (faster)", value=True)
-    with col2:
-        enable_search = st.toggle("Enable web search", value=True)
-
-    general_chat_container = st.container()
-    render_chat(general_chat_container, st.session_state.chat_history)
-
-    # Input section
-    user_input = st.text_input(
-        "Ask any question:", 
-        key="general_input", 
-        label_visibility="collapsed",
-        placeholder="Type your message here..."
-    )
-
-    if st.button("Send", key="general_send") and user_input:
-        st.session_state.chat_history.append(HumanMessage(content=user_input))
-
-        if user_input.lower() == 'clear chat':
+        if 'first_load_done' not in st.session_state:
+            st.session_state.first_load_done = True
             st.session_state.chat_history = []
-            st.rerun()
 
-        with st.spinner("Thinking..."):
-            conversation_context = "\n".join(
-                f"User: {msg.content}" if isinstance(msg, HumanMessage) else f"Assistant: {msg.content}"
-                for msg in st.session_state.chat_history[-10:]
-            )
-            if use_groq:
-                initial_answer = ask_groq(
-                    f"Conversation history:\n{conversation_context}\n\n"
-                    f"New question: {user_input}\n\n"
-                    "Please answer the new question considering the conversation history."
+        if 'chat_history' not in st.session_state:
+            st.session_state.chat_history = []
+
+        col1, col2 = st.columns(2)
+        with col1:
+            use_groq = st.toggle("Use Groq (faster)", value=True)
+        with col2:
+            enable_search = st.toggle("Enable web search", value=True)
+
+        general_chat_container = st.container()
+        render_chat(general_chat_container, st.session_state.chat_history)
+
+        # Input section
+        user_input = st.text_input(
+            "Ask any question:", 
+            key="general_input", 
+            label_visibility="collapsed",
+            placeholder="Type your message here..."
+        )
+
+        col1, col2 = st.columns([4,1])
+        with col1:
+            send_button = st.button("Send", key="general_send")
+        with col2:
+            st.button("↑ Scroll to Top", key="scroll_general", 
+                     on_click=lambda: st.components.v1.html(
+                         f"<script>scrollToTop('{tab3_container._html_id}')</script>",
+                         height=0
+                     ))
+
+        if send_button and user_input:
+            st.session_state.chat_history.append(HumanMessage(content=user_input))
+
+            if user_input.lower() == 'clear chat':
+                st.session_state.chat_history = []
+                st.rerun()
+
+            with st.spinner("Thinking..."):
+                conversation_context = "\n".join(
+                    f"User: {msg.content}" if isinstance(msg, HumanMessage) else f"Assistant: {msg.content}"
+                    for msg in st.session_state.chat_history[-10:]
                 )
-            else:
-                initial_answer = ask_gemini(
-                    f"Conversation history:\n{conversation_context}\n\n"
-                    f"New question: {user_input}\n\n"
-                    "Please answer the new question considering the conversation history."
+                if use_groq:
+                    initial_answer = ask_groq(
+                        f"Conversation history:\n{conversation_context}\n\n"
+                        f"New question: {user_input}\n\n"
+                        "Please answer the new question considering the conversation history."
+                    )
+                else:
+                    initial_answer = ask_gemini(
+                        f"Conversation history:\n{conversation_context}\n\n"
+                        f"New question: {user_input}\n\n"
+                        "Please answer the new question considering the conversation history."
+                    )
+                needs_search = (
+                    enable_search and 
+                    ("I don't know" in initial_answer or 
+                     "not sure" in initial_answer or 
+                     "as of my knowledge" in initial_answer or
+                     "current information" in initial_answer or
+                     any(word in user_input.lower() for word in ["current", "recent", "today", "now", "202", "update"]))
                 )
-            needs_search = (
-                enable_search and 
-                ("I don't know" in initial_answer or 
-                 "not sure" in initial_answer or 
-                 "as of my knowledge" in initial_answer or
-                 "current information" in initial_answer or
-                 any(word in user_input.lower() for word in ["current", "recent", "today", "now", "202", "update"]))
-            )
 
-            if needs_search:
-                with st.spinner("Searching for current information..."):
-                    search_results = search_tavily(user_input)
-                    if search_results:
-                        relevant_links = "\n".join(
-                            f"{i+1}. {result['title']} - {result['url']}" 
-                            for i, result in enumerate(search_results.get('results', [])[:3])
-                        )
+                if needs_search:
+                    with st.spinner("Searching for current information..."):
+                        search_results = search_tavily(user_input)
+                        if search_results:
+                            relevant_links = "\n".join(
+                                f"{i+1}. {result['title']} - {result['url']}" 
+                                for i, result in enumerate(search_results.get('results', [])[:3])
+                            )
 
-                        search_context = f"""Web search results:
+                            search_context = f"""Web search results:
 {search_results.get('answer', '')}
 
 Relevant links:
 {relevant_links}
 """
-                        # Generate final answer with search context
-                        if use_groq:
-                            final_answer = ask_groq(
-                                f"Conversation history:\n{conversation_context}\n\n"
-                                f"Question: {user_input}\n\n"
-                                f"Here's some additional information that might help answer better:\n"
-                                f"{search_context}\n\n"
-                                "Please provide an improved answer using this context and conversation history."
-                            )
-                        else:
-                            final_answer = ask_gemini(
-                                f"Conversation history:\n{conversation_context}\n\n"
-                                f"Question: {user_input}\n\n"
-                                f"Here's some additional information that might help answer better:\n"
-                                f"{search_context}\n\n"
-                                "Please provide an improved answer using this context and conversation history."
-                            )
+                            # Generate final answer with search context
+                            if use_groq:
+                                final_answer = ask_groq(
+                                    f"Conversation history:\n{conversation_context}\n\n"
+                                    f"Question: {user_input}\n\n"
+                                    f"Here's some additional information that might help answer better:\n"
+                                    f"{search_context}\n\n"
+                                    "Please provide an improved answer using this context and conversation history."
+                                )
+                            else:
+                                final_answer = ask_gemini(
+                                    f"Conversation history:\n{conversation_context}\n\n"
+                                    f"Question: {user_input}\n\n"
+                                    f"Here's some additional information that might help answer better:\n"
+                                    f"{search_context}\n\n"
+                                    "Please provide an improved answer using this context and conversation history."
+                                )
 
-                        answer = (f"{initial_answer}\n\n"
-                                  f"I found some updated information:\n{final_answer}")
-                    else:
-                        answer = f"{initial_answer}\n\n  Web search failed to find additional information."
-            else:
-                answer = initial_answer
-            st.session_state.chat_history.append(AIMessage(content=answer))
-            st.session_state.scroll = True
-            st.rerun()
+                            answer = (f"{initial_answer}\n\n"
+                                      f"I found some updated information:\n{final_answer}")
+                        else:
+                            answer = f"{initial_answer}\n\n  Web search failed to find additional information."
+                else:
+                    answer = initial_answer
+                st.session_state.chat_history.append(AIMessage(content=answer))
+                st.session_state.scroll = True
+                st.rerun()
 
 st.session_state.cleanup = cleanup
