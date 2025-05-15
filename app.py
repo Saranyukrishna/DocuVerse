@@ -1,5 +1,5 @@
 import streamlit as st
-import fitz  # PyMuPDF
+import fitz  
 from docx import Document
 from pptx import Presentation
 from PIL import Image, ImageEnhance
@@ -17,10 +17,9 @@ from langchain.schema import HumanMessage, AIMessage
 from tavily import TavilyClient
 from groq import Groq
 
-# Load environment variables
 load_dotenv()
 
-# Initialize APIs
+
 cohere_api_key = os.getenv("COHERE_API_KEY")
 gemini_api_key = os.getenv("GOOGLE_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
@@ -29,7 +28,6 @@ groq_api_key = os.getenv("GROQ_API_KEY")
 if not cohere_api_key or not gemini_api_key or not tavily_api_key or not groq_api_key:
     st.error("API keys not found. Please check your .env file")
     st.stop()
-
 try:
     co = cohere.Client(api_key=cohere_api_key)
     genai.configure(api_key=gemini_api_key)
@@ -38,41 +36,33 @@ try:
 except Exception as e:
     st.error(f"Failed to initialize API clients: {str(e)}")
     st.stop()
-    
-# Configuration
-MAX_PIXELS = 1568 * 1568  # Increased from original for better quality
-SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
-GEMINI_MODEL = "gemini-1.5-flash"
-IMAGE_QUALITY = 95  # Higher quality setting
-BLANK_IMAGE_THRESHOLD = 0.95  # Skip images with >95% dark or white pixels
 
-# Create temporary directory
-OUTPUT_DIR = Path(tempfile.mkdtemp())
-IMAGES_DIR = OUTPUT_DIR / "images"
-TEXT_FILE = OUTPUT_DIR / "extracted_text.txt"
+MAX_PIXELS=1568 * 1568  
+SUPPORTED_TYPES=["pdf", "docx", "pptx"]
+GEMINI_MODEL="gemini-1.5-flash"
+IMAGE_QUALITY=95  
 
+#temporaril store files in streamlit server
+OUTPUT_DIR=Path(tempfile.mkdtemp())
+IMAGES_DIR=OUTPUT_DIR /"images"
+TEXT_FILE=OUTPUT_DIR /"extracted_text.txt"
+
+#remove the exsisiting fules after the clear of the session
 def cleanup():
-    """Remove temporary files"""
     if OUTPUT_DIR.exists():
         shutil.rmtree(OUTPUT_DIR)
-
+        
+BLANK_IMAGE_THRESHOLD=0.95 
 def is_blank_image(pil_image, threshold=BLANK_IMAGE_THRESHOLD):
-    """Check if image is mostly blank/black or white"""
-    if pil_image.mode != 'RGB':
+    if pil_image.mode!='RGB':
         pil_image = pil_image.convert('RGB')
-    
-    # Convert to numpy array
     img_array = np.array(pil_image)
-    
-    # Calculate the percentage of black/dark pixels
-    # Check all channels (R, G, B) for darkness
     dark_pixels = np.sum((img_array[:,:,0] < 50) & 
                          (img_array[:,:,1] < 50) & 
                          (img_array[:,:,2] < 50))
     total_pixels = img_array.shape[0] * img_array.shape[1]
     dark_ratio = dark_pixels / total_pixels
     
-    # Also check for completely white images
     white_pixels = np.sum((img_array[:,:,0] > 200) & 
                          (img_array[:,:,1] > 200) & 
                          (img_array[:,:,2] > 200))
@@ -81,20 +71,14 @@ def is_blank_image(pil_image, threshold=BLANK_IMAGE_THRESHOLD):
     return dark_ratio > threshold or white_ratio > threshold
 
 def save_image(image_pil, image_count):
-    """Save image to temporary directory with better quality"""
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     img_path = IMAGES_DIR / f"image_{image_count}.png"
-    
-    # Convert to RGB if needed (for better quality with JPEG)
     if image_pil.mode in ('RGBA', 'LA'):
         image_pil = image_pil.convert('RGB')
-    
-    # Save with higher quality
     image_pil.save(img_path, quality=IMAGE_QUALITY, optimize=True)
     return str(img_path)
 
-def resize_image(pil_image, max_pixels=MAX_PIXELS):
-    """Resize image if too large while maintaining quality"""
+def resize_image(pil_image,max_pixels=MAX_PIXELS):
     org_width, org_height = pil_image.size
     if org_width * org_height > max_pixels:
         scale_factor = (max_pixels / (org_width * org_height)) ** 0.5
@@ -105,28 +89,22 @@ def resize_image(pil_image, max_pixels=MAX_PIXELS):
     return pil_image
 
 def base64_from_image(img_path):
-    """Convert image to base64 with better quality"""
     try:
         pil_image = Image.open(img_path)
         img_format = pil_image.format or "PNG"
-        
-        # Convert to RGB if needed
         if pil_image.mode in ('RGBA', 'LA'):
             pil_image = pil_image.convert('RGB')
-        
         pil_image = resize_image(pil_image)
-        
         with io.BytesIO() as buffer:
-            # Save with higher quality
             pil_image.save(buffer, format=img_format, quality=IMAGE_QUALITY, optimize=True)
             encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return f"data:image/{img_format.lower()};base64,{encoded}"
     except Exception as e:
         st.error(f"Error processing image: {str(e)}")
         return None
-
+        
+#extracting text adn images from pdf 
 def extract_pdf(file):
-    """Extract text and images from PDF with better image quality"""
     text = ""
     image_paths = []
     image_count = 1
@@ -139,24 +117,18 @@ def extract_pdf(file):
                     base_image = pdf.extract_image(xref)
                     img_bytes = base_image["image"]
                     img_pil = Image.open(io.BytesIO(img_bytes))
-                    
-                    # Skip blank/black images
                     if is_blank_image(img_pil):
                         continue
-                    
-                    # Convert to RGB if needed
                     if img_pil.mode in ('RGBA', 'LA'):
                         img_pil = img_pil.convert('RGB')
-                    
                     img_path = save_image(img_pil, image_count)
                     image_paths.append(img_path)
                     image_count += 1
     except Exception as e:
         st.error(f"Error processing PDF: {str(e)}")
     return text, image_paths
-
+#extrating text and images form the docs
 def extract_docx(file):
-    """Extract text and images from DOCX with better image quality"""
     text = ""
     image_paths = []
     image_count = 1
@@ -169,24 +141,18 @@ def extract_docx(file):
             if "image" in rel_obj.target_ref:
                 img_data = rel_obj.target_part.blob
                 img_pil = Image.open(io.BytesIO(img_data))
-                
-                # Skip blank/black images
                 if is_blank_image(img_pil):
                     continue
-                
-                # Convert to RGB if needed
                 if img_pil.mode in ('RGBA', 'LA'):
                     img_pil = img_pil.convert('RGB')
-                
                 img_path = save_image(img_pil, image_count)
                 image_paths.append(img_path)
                 image_count += 1
     except Exception as e:
         st.error(f"Error processing DOCX: {str(e)}")
     return text, image_paths
-
+#extractning text and images from ppt
 def extract_pptx(file):
-    """Extract text and images from PPTX with better image quality"""
     text = ""
     image_paths = []
     image_count = 1
@@ -199,12 +165,8 @@ def extract_pptx(file):
                 if shape.shape_type == 13:  # 13 = picture
                     img_stream = shape.image.blob
                     img_pil = Image.open(io.BytesIO(img_stream))
-                    
-                    # Skip blank/black images
                     if is_blank_image(img_pil):
                         continue
-                    
-                    # Convert to RGB if needed
                     if img_pil.mode in ('RGBA', 'LA'):
                         img_pil = img_pil.convert('RGB')
                     
