@@ -162,7 +162,7 @@ def extract_pptx(file):
             for shape in slide.shapes:
                 if hasattr(shape, "text"):
                     text += shape.text + "\n"
-                if shape.shape_type == 13:  # 13 = picture
+                if shape.shape_type == 20: 
                     img_stream = shape.image.blob
                     img_pil = Image.open(io.BytesIO(img_stream))
                     if is_blank_image(img_pil):
