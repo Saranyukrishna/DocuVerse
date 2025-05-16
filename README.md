@@ -46,4 +46,4 @@ Tavily – Web search API
 LangChain – Chat message schemas
 
 Check out the live app here:
-saranyu-docuverse.streamlit.app
+https://saranyu-docuverse.streamlit.app/
